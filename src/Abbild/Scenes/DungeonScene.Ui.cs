@@ -340,7 +340,7 @@ public sealed partial class DungeonScene
         bool attacking = _enemyAttackT >= 0;
         Art.Enemy(g, art, b.Enemy.Def, feet, _animTime, scale, color, attacking, Math.Max(0, _enemyAttackT));
         g.Batch.End();
-        if (_enemyFlash > 0)
+        if (_enemyFlash > 0 || _enemyDeath >= 0)
         {
             // 当たったときに白く光らせる（加算）
             g.Batch.Begin(blendState: BlendState.Additive, samplerState: art.Pixel ? SamplerState.PointClamp : SamplerState.LinearClamp);

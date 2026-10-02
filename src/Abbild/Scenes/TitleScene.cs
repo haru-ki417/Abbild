@@ -55,6 +55,8 @@ public sealed class TitleScene(Services s) : Scene(s)
             else if (c == 1) S.Game.Scenes.Go(new CreateScene(S));
             return;
         }
+        // メニューが見えるまでは選べない（前の画面の連打で選んでしまわないように）
+        if (Ease.OutCubic(Time / 1.4f) <= 0.6f) return;
         int i = _menu.Update(S, MenuArea);
         switch (i)
         {
