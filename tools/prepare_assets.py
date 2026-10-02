@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -206,6 +207,7 @@ def main() -> int:
     print("heroes")
 
     count = 0
+    frames: dict[str, int] = {}
     for folder, prefix, slug in RMT_GROUPS:
         d = rmt / folder
         for v in "ABCD":
@@ -213,12 +215,16 @@ def main() -> int:
             for kind in ("idle", "attack"):
                 fs = rmt_frames(d, stem, kind)
                 if fs:
-                    make_strip(fs).save(OUT / "rmt" / f"{slug}_{v.lower()}_{kind}.png", optimize=True)
+                    name = f"{slug}_{v.lower()}_{kind}"
+                    make_strip(fs).save(OUT / "rmt" / f"{name}.png", optimize=True)
+                    frames[name] = len(fs)
                     count += 1
     d1 = rmt / "スライム" / "スライムD1_移動000.png"
     if d1.exists():
         make_strip([d1]).save(OUT / "rmt" / "slime_d1_idle.png", optimize=True)
+        frames["slime_d1_idle"] = 1
         count += 1
+    (OUT / "rmt" / "frames.json").write_text(json.dumps(frames, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
     shutil.copyfile(rmt / "利用規約.txt", OUT / "rmt" / "TERMS_ja_sjis.txt")
     print("rmt strips", count)
 

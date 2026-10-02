@@ -104,9 +104,9 @@ public abstract class Challenge
 
     protected string ShakeShort => Mode == BodyMode.Sensor ? "振れ" : "← → 連打";
 
-    protected string ConfirmName => Mode == BodyMode.Sensor ? "決定ボタン" : "決定ボタン（Z / Enter / Ⓐ）";
+    protected string ConfirmName => Mode == BodyMode.Sensor ? "決定ボタン" : "決定ボタン（Z / Enter / パッドの A）";
 
-    protected string BreathVerb => Mode == BodyMode.Sensor ? "センサーに息を吹きかける" : "息ボタン（C / Ⓨ）を押し続ける";
+    protected string BreathVerb => Mode == BodyMode.Sensor ? "センサーに息を吹きかける" : "息ボタン（C / パッドの Y）を押し続ける";
 
     public static Challenge Create(ChallengeKind kind, ChallengeContext ctx) => kind switch
     {
@@ -119,7 +119,7 @@ public abstract class Challenge
         ChallengeKind.Revive => new CountChallenge(kind, ctx, 10, ctx.ReviveTarget, "蘇生せよ！", "10 秒以内に{1}を {2} 回連打！", false),
         ChallengeKind.Alchemy => new AlchemyChallenge(ctx),
         ChallengeKind.Meditation => new CalmChallenge(kind, ctx, 10, 0.72, "瞑想", "心を静めるほど大きく回復する"),
-        ChallengeKind.Glare => new CalmChallenge(kind, ctx, 5, 0.7, "動くな！ 心拍検知", "敵が心臓の音を探っている。5 秒間、心を静めて気配を消せ"),
+        ChallengeKind.Glare => new CalmChallenge(kind, ctx, 5, 0.6, "動くな！ 心拍検知", "敵が心臓の音を探っている。5 秒間、心を静めて気配を消せ"),
         ChallengeKind.Negotiation => new NegotiationChallenge(ctx),
         ChallengeKind.Rage => new RageChallenge(ctx),
         ChallengeKind.Dowsing => new DowsingChallenge(ctx),
@@ -260,7 +260,7 @@ public sealed class HeartTrial : Challenge
             double b = _tempo.Bpm;
             Status = double.IsFinite(b) ? $"♥ {b:0}" : "♥ …（叩いてください）";
         }
-        Gauge = Elapsed / Duration;
+        GaugeLabel = Mode == BodyMode.Keys ? $"{_tempo.Count} 回" : "";
     }
 
     protected override void TimeUp()
