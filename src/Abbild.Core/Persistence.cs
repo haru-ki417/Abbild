@@ -182,7 +182,15 @@ public sealed class SaveStore(string directory)
         return Path.Combine(root, "Abbild");
     }
 
-    public bool HasSave => File.Exists(PathOf("adventure.json"));
+    public bool HasSave
+    {
+        get
+        {
+            try { return File.Exists(PathOf("adventure.json")); }
+            catch (IOException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
+        }
+    }
 
     public SaveData? LoadSave() => Read<SaveData>("adventure.json");
 
@@ -210,15 +218,25 @@ public sealed class SaveStore(string directory)
     private T? Read<T>(string name) where T : class
     {
         string p = PathOf(name);
-        if (!File.Exists(p)) return null;
         try
         {
+            if (!File.Exists(p)) return null;
             return JsonSerializer.Deserialize<T>(File.ReadAllText(p), Json);
         }
         catch (JsonException)
         {
             // 壊れたファイルは脇へよけて、最初からにする
-            File.Copy(p, p + ".broken", overwrite: true);
+            try { File.Copy(p, p + ".broken", overwrite: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
             return null;
         }
     }

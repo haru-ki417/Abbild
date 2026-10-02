@@ -28,6 +28,7 @@ public sealed class GameOverScene(Services s, RunState run) : Scene(s)
         {
             var save = S.Store.LoadSave();
             if (save is not null) S.Game.Scenes.Go(new DungeonScene(S, save.ToRun(), fromSave: true), 0.8f);
+            else S.Game.Scenes.Go(new TitleScene(S), 0.8f);
         }
         else if (i == 1)
         {

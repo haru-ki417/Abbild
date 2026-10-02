@@ -708,6 +708,13 @@ public sealed class BattleSession
         return new VictoryReward(exp, ups, drops, lost);
     }
 
+    /// <summary>戦いが終わったとき（勝ち・逃げ・逃げられた すべて）に、戦い中だけの状態を戻す。</summary>
+    public void EndBattle()
+    {
+        Hero.IsBerserk = false;
+        Hero.ChargeMultiplier = 1.0;
+    }
+
     /// <summary>蘇生の儀式に挑めるか。</summary>
     public bool CanRevive => Hero.ReviveCharges > 0;
 

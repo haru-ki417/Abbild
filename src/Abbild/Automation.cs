@@ -40,6 +40,7 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
             {
                 _script = null;
                 Log("おわり");
+                Directory.CreateDirectory(OutDir);
                 File.WriteAllLines(Path.Combine(OutDir, "automation.log"), _log);
                 s.Game.Exit();
                 return;

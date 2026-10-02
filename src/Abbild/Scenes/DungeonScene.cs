@@ -152,7 +152,11 @@ public sealed partial class DungeonScene : Scene
         _fromSave = fromSave;
         _displayHp = run.Hero.Hp;
         _displayMp = run.Hero.Mp;
+        _recordedWins = run.BattlesWon;
     }
+
+    /// <summary>記録（通算の勝利数）にもう足した勝利数。やり直しで二重に数えないため。</summary>
+    private int _recordedWins;
 
     public RunState Run => _run;
 
@@ -457,7 +461,8 @@ public sealed partial class DungeonScene : Scene
         var rec = S.Records;
         rec.GameOvers++;
         rec.BestFloor = Math.Max(rec.BestFloor, _run.Floor);
-        rec.TotalBattles += _run.BattlesWon;
+        rec.TotalBattles += _run.BattlesWon - _recordedWins;
+        _recordedWins = _run.BattlesWon;
         S.SaveRecords();
         S.Game.Scenes.Go(new GameOverScene(S, _run), 1.2f);
     }
@@ -466,6 +471,7 @@ public sealed partial class DungeonScene : Scene
     {
         var b = _battle!;
         var h = _run.Hero;
+        b.EndBattle();
         bool won = b.Outcome is BattleOutcome.Victory or BattleOutcome.Peace or BattleOutcome.Intimidated;
         if (won)
         {
@@ -498,10 +504,13 @@ public sealed partial class DungeonScene : Scene
             var rec = S.Records;
             rec.Clears++;
             rec.BestFloor = Progression.TopFloor;
-            rec.TotalBattles += _run.BattlesWon;
+            rec.TotalBattles += _run.BattlesWon - _recordedWins;
+            _recordedWins = _run.BattlesWon;
             if (rec.FastestClearSeconds <= 0 || _run.PlaySeconds < rec.FastestClearSeconds) rec.FastestClearSeconds = _run.PlaySeconds;
             S.SaveRecords();
-            try { S.Store.DeleteSave(); } catch (IOException) { }
+            try { S.Store.DeleteSave(); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
             S.Game.Scenes.Go(new StoryScene(S, StoryScene.Epilogue, "final", "ending", () => new EndingScene(S, _run)), 1.5f);
             yield break;
         }

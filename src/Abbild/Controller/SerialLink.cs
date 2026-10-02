@@ -8,57 +8,77 @@ public enum LinkState { Off, Searching, Connected, Lost }
 
 /// <summary>
 /// 自作コントローラー（Arduino）とのシリアル通信。読み取りは別スレッドで行い、
-/// 受け取った行はゲームのスレッドで取り出す。つながらなくてもゲームは続けられる。
+/// 受け取った行はゲームのスレッドで取り出す。つながらなくても、途中で抜けても、ゲームは止めない。
+/// 接続しなおすたびに新しい「セッション」を作り、古いものは待たずに打ち切る（ゲームが固まらないように）。
 /// </summary>
 public sealed class SerialLink : IDisposable
 {
-    private readonly ConcurrentQueue<string> _lines = new();
-    private readonly ConcurrentQueue<string> _out = new();
-    private SerialPort? _port;
-    private Thread? _thread;
-    private volatile bool _stop;
-    private volatile LinkState _state = LinkState.Off;
+    private sealed class Session
+    {
+        public readonly CancellationTokenSource Cancel = new();
+        public readonly ConcurrentQueue<string> Lines = new();
+        public readonly ConcurrentQueue<string> Out = new();
+        public volatile LinkState State = LinkState.Searching;
+        public volatile string Message = "";
+        public volatile string? PortName;
+        public SerialPort? Port;
+    }
 
-    public LinkState State => _state;
-    public string? PortName { get; private set; }
-    public string Message { get; private set; } = "未接続";
+    private Session? _session;
+
+    public LinkState State => _session?.State ?? LinkState.Off;
+    public string? PortName => _session?.PortName;
+    public string Message => _session?.Message is { Length: > 0 } m ? m : "未接続";
 
     /// <summary>このパソコンにあるシリアルポート。</summary>
     public static string[] Ports()
     {
         try { return SerialPort.GetPortNames().Distinct().OrderBy(p => p, StringComparer.Ordinal).ToArray(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException or InvalidOperationException) { return []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException or InvalidOperationException or System.ComponentModel.Win32Exception) { return []; }
     }
 
     /// <summary>接続を始める。port が null なら、データを送ってくるポートを順に探す。</summary>
     public void Start(string? port, int baud, Func<string, bool> looksValid)
     {
         Stop();
-        _stop = false;
-        _state = LinkState.Searching;
-        Message = port is null ? "コントローラーを探しています…" : $"{port} に接続しています…";
-        _thread = new Thread(() => Run(port, baud, looksValid)) { IsBackground = true, Name = "SerialLink" };
-        _thread.Start();
+        var s = new Session { Message = port is null ? "コントローラーを探しています…" : $"{port} に接続しています…" };
+        _session = s;
+        var thread = new Thread(() => Run(s, port, baud, looksValid)) { IsBackground = true, Name = "SerialLink" };
+        thread.Start();
     }
 
-    private void Run(string? fixedPort, int baud, Func<string, bool> looksValid)
+    private static void Run(Session s, string? fixedPort, int baud, Func<string, bool> looksValid)
     {
-        var candidates = fixedPort is null ? Ports() : [fixedPort];
-        foreach (var name in candidates)
+        try
         {
-            if (_stop) return;
-            if (TryOpen(name, baud, looksValid, fixedPort is not null)) break;
+            var candidates = fixedPort is null ? Ports() : [fixedPort];
+            foreach (var name in candidates)
+            {
+                if (s.Cancel.IsCancellationRequested) return;
+                if (TryOpen(s, name, baud, looksValid, fixedPort is not null)) break;
+            }
+            if (s.Port is null)
+            {
+                s.State = LinkState.Off;
+                s.Message = candidates.Length == 0 ? "シリアルポートが見つかりません" : "コントローラーが見つかりません";
+                return;
+            }
+            ReadLoop(s);
         }
-        if (_port is null)
+        catch (Exception)
         {
-            _state = LinkState.Off;
-            Message = candidates.Length == 0 ? "シリアルポートが見つかりません" : "コントローラーが見つかりません";
-            return;
+            // 別スレッドの例外でゲームごと落ちないように、ここで必ず受け止める
+            s.State = LinkState.Lost;
+            s.Message = "コントローラーとの通信でエラーが起きました";
         }
-        ReadLoop();
+        finally
+        {
+            Close(s.Port);
+            s.Port = null;
+        }
     }
 
-    private bool TryOpen(string name, int baud, Func<string, bool> looksValid, bool trust)
+    private static bool TryOpen(Session s, string name, int baud, Func<string, bool> looksValid, bool trust)
     {
         SerialPort? p = null;
         try
@@ -73,91 +93,107 @@ public sealed class SerialLink : IDisposable
                 Encoding = System.Text.Encoding.ASCII,
             };
             p.Open();
+            // USB を抜いたときに後片付けの段階で落ちる既知の問題を避ける
+            GC.SuppressFinalize(p.BaseStream);
             // Arduino は接続した瞬間にリセットされるので、少し待ちながら有効な行を探す
             var until = DateTime.UtcNow.AddSeconds(trust ? 4 : 3);
-            while (DateTime.UtcNow < until && !_stop)
+            while (DateTime.UtcNow < until && !s.Cancel.IsCancellationRequested)
             {
                 string line;
                 try { line = p.ReadLine(); }
                 catch (TimeoutException) { continue; }
                 if (looksValid(line))
                 {
-                    _port = p;
-                    PortName = name;
-                    _state = LinkState.Connected;
-                    Message = $"{name} で接続中";
-                    _lines.Enqueue(line);
+                    s.Port = p;
+                    s.PortName = name;
+                    s.State = LinkState.Connected;
+                    s.Message = $"{name} で接続中";
+                    s.Lines.Enqueue(line);
                     return true;
                 }
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception)
         {
             // 使えないポートは次へ
         }
-        try { p?.Close(); } catch (IOException) { }
-        p?.Dispose();
+        Close(p);
         return false;
     }
 
-    private void ReadLoop()
+    private static void ReadLoop(Session s)
     {
-        var port = _port!;
+        var port = s.Port!;
         DateTime lastData = DateTime.UtcNow;
-        while (!_stop)
+        while (!s.Cancel.IsCancellationRequested)
         {
             try
             {
-                while (_out.TryDequeue(out var cmd)) port.WriteLine(cmd);
+                while (s.Out.TryDequeue(out var cmd)) port.WriteLine(cmd);
                 string line = port.ReadLine();
-                _lines.Enqueue(line);
+                s.Lines.Enqueue(line);
+                while (s.Lines.Count > 500) s.Lines.TryDequeue(out _);
                 lastData = DateTime.UtcNow;
-                if (_state != LinkState.Connected)
+                if (s.State != LinkState.Connected)
                 {
-                    _state = LinkState.Connected;
-                    Message = $"{PortName} で接続中";
+                    s.State = LinkState.Connected;
+                    s.Message = $"{s.PortName} で接続中";
                 }
             }
             catch (TimeoutException)
             {
-                if ((DateTime.UtcNow - lastData).TotalSeconds > 3 && _state == LinkState.Connected)
+                if ((DateTime.UtcNow - lastData).TotalSeconds > 3 && s.State == LinkState.Connected)
                 {
-                    _state = LinkState.Lost;
-                    Message = "コントローラーからの信号が途切れています";
+                    s.State = LinkState.Lost;
+                    s.Message = "コントローラーからの信号が途切れています";
                 }
             }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
             {
-                _state = LinkState.Lost;
-                Message = "コントローラーが外れました";
+                s.State = LinkState.Lost;
+                s.Message = "コントローラーが外れました（つなぎなおしたら「接続しなおす」）";
                 break;
             }
         }
-        try { port.Close(); } catch (IOException) { }
-        port.Dispose();
-        if (ReferenceEquals(_port, port)) _port = null;
     }
 
-    public bool TryReadLine(out string line) => _lines.TryDequeue(out line!);
+    private static void Close(SerialPort? p)
+    {
+        if (p is null) return;
+        try { p.Close(); }
+        catch (Exception) { }
+        try { p.Dispose(); }
+        catch (Exception) { }
+    }
+
+    public bool TryReadLine(out string line)
+    {
+        var s = _session;
+        if (s is not null && s.Lines.TryDequeue(out var l))
+        {
+            line = l;
+            return true;
+        }
+        line = "";
+        return false;
+    }
 
     public void Send(string? command)
     {
-        if (command is null || _state != LinkState.Connected) return;
-        if (_out.Count < 32) _out.Enqueue(command);
+        var s = _session;
+        if (command is null || s is null || s.State != LinkState.Connected) return;
+        if (s.Out.Count < 32) s.Out.Enqueue(command);
     }
 
+    /// <summary>今のセッションを打ち切る（待たない）。</summary>
     public void Stop()
     {
-        _stop = true;
-        _thread?.Join(800);
-        _thread = null;
-        try { _port?.Close(); } catch (IOException) { }
-        _port?.Dispose();
-        _port = null;
-        _state = LinkState.Off;
-        Message = "未接続";
-        while (_lines.TryDequeue(out _)) { }
-        while (_out.TryDequeue(out _)) { }
+        var s = _session;
+        _session = null;
+        if (s is null) return;
+        s.Cancel.Cancel();
+        // 読み取り中の ReadLine を止めるため、ポートも閉じる（読み取りスレッドの後片付けと重なっても大丈夫）
+        Close(s.Port);
     }
 
     public void Dispose() => Stop();
@@ -184,10 +220,22 @@ public sealed class ControllerHub : IDisposable
 
     public void Connect(Settings s)
     {
+        ConnectMain(s);
+        ConnectWeather(s);
+    }
+
+    public void ConnectMain(Settings s)
+    {
         ArgumentNullException.ThrowIfNull(s);
         SoundEnabled = s.ControllerSound;
+        _lastLed = LedColor.None;
         if (s.UseController) _main.Start(s.ControllerPort, s.ControllerBaud, l => ControllerProtocol.TryParse(l, out _));
         else _main.Stop();
+    }
+
+    public void ConnectWeather(Settings s)
+    {
+        ArgumentNullException.ThrowIfNull(s);
         if (!string.IsNullOrEmpty(s.WeatherPort)) _weather.Start(s.WeatherPort, s.WeatherBaud, l => ControllerProtocol.TryParseWeather(l, out _));
         else _weather.Stop();
     }
@@ -211,7 +259,8 @@ public sealed class ControllerHub : IDisposable
             foreach (var s in samples) Sensors.Feed(s, each);
             _sinceSample = 0;
         }
-        while (_weather.TryReadLine(out var line))
+        n = 0;
+        while (n++ < 50 && _weather.TryReadLine(out var line))
         {
             if (ControllerProtocol.TryParseWeather(line, out var w)) LatestWeather = w;
         }

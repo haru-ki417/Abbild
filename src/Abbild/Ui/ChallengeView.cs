@@ -181,9 +181,10 @@ public sealed class ChallengeView
         // 呼吸のガイド
         if (_c.WantsBreathGuide && _phase == Phase.Running)
         {
+            float half = (float)SimulatedHeart.BreathCycle / 2;
             float cyc = (float)(_runTime % SimulatedHeart.BreathCycle);
             bool inhale = SimulatedHeart.IsInhale(_runTime);
-            float k = inhale ? cyc / 4f : 1 - ((cyc - 4f) / 4f);
+            float k = inhale ? cyc / half : 1 - ((cyc - half) / half);
             float rr = 80 + (Ease.InOutSine(k) * 110);
             var gp = new Vector2(Gfx.Width / 2f - 480, 470);
             g.Glow(gp, rr * 1.4f, new Color(90, 160, 255) * 0.25f);

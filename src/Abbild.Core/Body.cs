@@ -54,12 +54,22 @@ public readonly record struct HeartThresholds(double Rest, double Calm, double E
 
 /// <summary>
 /// コントローラーがないときの「心拍」。連打や振りで上がり、
-/// 呼吸のガイドに合わせてボタンを押す・離すと下がる。
+/// 呼吸のガイドに合わせてボタンを押す（吸う）・離す（吐く）と下がる。
+/// 何もしない・押しっぱなし・でたらめに押す、のどれでも落ち着かないように、
+/// 「吐く」は直前の「吸う」でちゃんと押していたときだけ合っているとみなし、
+/// 直近 1.5 秒の合い具合を 3 乗して効かせる（だいたい合っていないと下がらない）。
 /// </summary>
 public sealed class SimulatedHeart
 {
+    private const double Window = 1.5;
+    private readonly Queue<(double Dt, bool Match)> _recent = new();
+    private double _recentTime;
+    private double _recentMatch;
     private double _activity;   // 最近の動きの多さ（回/秒）
-    private double _calm;       // 最近の呼吸の合い具合（0〜1）
+    private double _inhaleHeld;
+    private double _inhaleTotal;
+    private double _lastInhaleRatio;
+    private bool _wasInhale = true;
 
     public SimulatedHeart(double rest = 72) => Rest = rest;
 
@@ -67,10 +77,13 @@ public sealed class SimulatedHeart
 
     public double Bpm { get; private set; } = 80;
 
-    /// <summary>呼吸のガイドの周期（吸う 4 秒・吐く 4 秒）。</summary>
-    public const double BreathCycle = 8.0;
+    /// <summary>呼吸のガイドの周期（吸う 2 秒・吐く 2 秒）。</summary>
+    public const double BreathCycle = 4.0;
 
     public static bool IsInhale(double t) => (t % BreathCycle) < BreathCycle / 2;
+
+    /// <summary>直近の呼吸の合い具合（0〜1）。</summary>
+    public double Accuracy => _recentTime <= 0 ? 0 : _recentMatch / Window;
 
     /// <param name="actions">このフレームの連打・振りの回数。</param>
     /// <param name="guideActive">呼吸のガイドを出しているか。</param>
@@ -79,27 +92,51 @@ public sealed class SimulatedHeart
     public void Update(double dt, int actions, bool guideActive, double guideTime, bool holding)
     {
         if (dt <= 0) return;
-        _activity += (actions / dt - _activity) * Math.Min(1, dt / 0.8);
+        _activity += ((actions / dt) - _activity) * Math.Min(1, dt / 0.8);
+        bool match = false;
         if (guideActive)
         {
             bool inhale = IsInhale(guideTime);
-            double match = inhale == holding ? 1 : 0;
-            _calm += (match - _calm) * Math.Min(1, dt / 1.5);
+            if (inhale && !_wasInhale) { _inhaleHeld = 0; _inhaleTotal = 0; }
+            if (!inhale && _wasInhale) _lastInhaleRatio = _inhaleTotal > 0 ? _inhaleHeld / _inhaleTotal : 0;
+            _wasInhale = inhale;
+            if (inhale)
+            {
+                _inhaleTotal += dt;
+                if (holding) _inhaleHeld += dt;
+                match = holding;
+            }
+            else
+            {
+                match = !holding && _lastInhaleRatio >= 0.6;
+            }
         }
-        else
+        _recent.Enqueue((dt, match));
+        _recentTime += dt;
+        if (match) _recentMatch += dt;
+        while (_recentTime > Window && _recent.Count > 0)
         {
-            _calm += (0 - _calm) * Math.Min(1, dt / 4.0);
+            var (odt, om) = _recent.Dequeue();
+            _recentTime -= odt;
+            if (om) _recentMatch -= odt;
         }
-        double target = Rest + 8 + Math.Min(40, _activity * 3.2) - (16 * _calm);
-        Bpm += (target - Bpm) * Math.Min(1, dt / 1.6);
+        double a = Math.Clamp(Accuracy, 0, 1);
+        double target = Rest + 12 + Math.Min(40, _activity * 3.2) - (22 * a * a * a);
+        Bpm += (target - Bpm) * Math.Min(1, dt / 0.8);
     }
 
-    /// <summary>落ち着いた状態から始める（瞑想などの前）。</summary>
+    /// <summary>ミニゲームの前に呼ぶ。</summary>
     public void Reset(double bpm)
     {
         Bpm = bpm;
         _activity = 0;
-        _calm = 0;
+        _recent.Clear();
+        _recentTime = 0;
+        _recentMatch = 0;
+        _inhaleHeld = 0;
+        _inhaleTotal = 0;
+        _lastInhaleRatio = 0;
+        _wasInhale = true;
     }
 }
 

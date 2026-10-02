@@ -47,8 +47,9 @@ public sealed class Menu
         if (input.Repeat(Act.Down)) Move(1);
         if (OnAdjust is not null)
         {
-            if (input.Repeat(Act.Left)) { OnAdjust(Index, -1); s.Cue(Cue.Cursor); }
-            if (input.Repeat(Act.Right)) { OnAdjust(Index, 1); s.Cue(Cue.Cursor); }
+            bool enabled = _items[Index].Enabled;
+            if (input.Repeat(Act.Left) && enabled) { OnAdjust(Index, -1); s.Cue(Cue.Cursor); }
+            if (input.Repeat(Act.Right) && enabled) { OnAdjust(Index, 1); s.Cue(Cue.Cursor); }
         }
         if (input.Wheel != 0) Move(-input.Wheel);
 

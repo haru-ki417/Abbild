@@ -23,7 +23,7 @@ public sealed class BodyInput(Input input, ControllerHub hub)
     {
         _cursor = 0;
         _alt.Reset();
-        _heart.Reset(calmStart ? 76 : 84);
+        _heart.Reset(calmStart ? 82 : 84);
     }
 
     public BodyFrame Read(double dt, bool breathGuide, double guideTime)

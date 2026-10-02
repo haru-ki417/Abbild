@@ -145,12 +145,12 @@ public class SimulatedBodyTests
     public void 呼吸のガイドに合わせると心拍が下がり_連打すると上がる()
     {
         var calm = new SimulatedHeart();
-        calm.Reset(76);
+        calm.Reset(82);
         for (double t = 0; t < 10; t += 1 / 60.0) calm.Update(1 / 60.0, 0, true, t, SimulatedHeart.IsInhale(t));
         Assert.True(calm.Bpm <= HeartThresholds.ForKeys.Calm, $"落ち着く {calm.Bpm}");
 
         var hot = new SimulatedHeart();
-        hot.Reset(76);
+        hot.Reset(82);
         for (double t = 0; t < 4; t += 1 / 60.0) hot.Update(1 / 60.0, (int)(t * 60) % 8 == 0 ? 1 : 0, false, t, false);
         Assert.True(hot.Bpm >= HeartThresholds.ForKeys.Excite, $"高ぶる {hot.Bpm}");
     }
@@ -360,5 +360,55 @@ public class ChallengeTests
                 Assert.Contains(c.Instructions, l => !string.IsNullOrWhiteSpace(l));
             }
         }
+    }
+}
+
+public class KeyboardCalmTests
+{
+    // BodyInput と同じやり方で、キーボードの「呼吸」から心拍を作ってミニゲームに流す
+    private static ChallengeOutcome Play(ChallengeKind kind, Func<double, bool, bool> hold, Func<double, bool>? press = null)
+    {
+        var heart = new SimulatedHeart();
+        heart.Reset(82);
+        var c = Challenge.Create(kind, new ChallengeContext(BodyMode.Keys, HeartThresholds.ForKeys, 7));
+        for (double t = 0; t < 30 && !c.Finished; t += 1 / 60.0)
+        {
+            bool inhale = SimulatedHeart.IsInhale(t);
+            bool h = hold(t, inhale);
+            bool p = press?.Invoke(t) ?? false;
+            heart.Update(1 / 60.0, p ? 1 : 0, c.WantsBreathGuide, t, h);
+            c.Update(new BodyFrame { Dt = 1 / 60.0, ConfirmHeld = h, ConfirmPressed = p, HeartBpm = heart.Bpm });
+        }
+        return c.Outcome;
+    }
+
+    private static bool Late(double t, double late) => SimulatedHeart.IsInhale(t - late) && t > late;
+
+    [Theory]
+    [InlineData(ChallengeKind.Glare)]
+    [InlineData(ChallengeKind.Meditation)]
+    public void 何もしない_押しっぱなしでは落ち着けない(ChallengeKind kind)
+    {
+        Assert.False(Play(kind, (_, _) => false).Success);
+        Assert.False(Play(kind, (_, _) => true).Success);
+        Assert.False(Play(kind, (t, _) => ((int)(t * 3)) % 2 == 0).Success);
+    }
+
+    [Theory]
+    [InlineData(ChallengeKind.Glare)]
+    [InlineData(ChallengeKind.Meditation)]
+    public void ガイドに合わせれば少し遅れても落ち着ける(ChallengeKind kind)
+    {
+        Assert.True(Play(kind, (_, inhale) => inhale).Success);
+        Assert.True(Play(kind, (t, _) => Late(t, 0.3)).Success);
+    }
+
+    [Fact]
+    public void 交渉は何もしなければ決裂し_呼吸で和解_連打で威圧()
+    {
+        Assert.Equal(Mood.Neutral, Play(ChallengeKind.Negotiation, (_, _) => false).Mood);
+        Assert.Equal(Mood.Neutral, Play(ChallengeKind.Negotiation, (_, _) => true).Mood);
+        Assert.Equal(Mood.Calm, Play(ChallengeKind.Negotiation, (_, inhale) => inhale).Mood);
+        Assert.Equal(Mood.Excited, Play(ChallengeKind.Negotiation, (_, _) => false, t => ((int)(t * 60)) % 8 == 0).Mood);
     }
 }

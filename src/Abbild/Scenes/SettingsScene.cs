@@ -11,6 +11,8 @@ public sealed class SettingsScene : Scene
     private readonly Func<Scene> _back;
     private readonly Menu _menu = new() { RowHeight = 62, FontSize = 36, VisibleRows = 12, Wrap = true };
     private string[] _ports = [];
+    private bool _mainDirty;
+    private bool _weatherDirty;
 
     public SettingsScene(Services s, Func<Scene> back) : base(s)
     {
@@ -37,10 +39,10 @@ public sealed class SettingsScene : Scene
             new("画面", true, S.Game.IsFullscreen ? "フルスクリーン" : "ウィンドウ", "F11 でもいつでも切り替えられます"),
             new("文字の速さ", true, st.TextSpeed switch { 0 => "ゆっくり", 2 => "はやい", _ => "ふつう" }, "戦いのメッセージが流れる速さ"),
             new("自作コントローラー", true, st.UseController ? "使う" : "使わない", "Arduino で作ったコントローラーを使うか"),
-            new("　ポート", st.UseController, st.ControllerPort ?? "自動で探す", "決定で選びなおして接続します"),
+            new("　ポート", st.UseController, st.ControllerPort ?? "自動で探す", "← → で選んで、決定で接続します"),
             new("　コントローラーの音", st.UseController, st.ControllerSound ? "鳴らす" : "鳴らさない", "ブザーの音（LED はいつも光ります）"),
             new("　高ぶりの判定", st.UseController, $"安静時 +{st.ExciteMargin}", $"安静時の心拍 {st.RestingBpm:0}。バーサークや威圧で「高ぶっている」とみなす上がり幅"),
-            new("天気モジュール（ESP）", true, st.WeatherPort ?? "使わない", "外の天気をゲームに反映する（任意）"),
+            new("天気モジュール（ESP）", true, st.WeatherPort ?? "使わない", "外の天気をゲームに反映する（任意）。← → で選んで、決定で接続します"),
             new("接続しなおす", st.UseController, "", S.Controller.Link.Message),
             new("センサーの確認", true, "", "いま体の入力がどう読まれているかを見る"),
             new("もどる"),
@@ -73,6 +75,7 @@ public sealed class SettingsScene : Scene
         options.AddRange(_ports);
         int i = options.IndexOf(S.Settings.ControllerPort);
         S.Settings.ControllerPort = options[((i + d) % options.Count + options.Count) % options.Count];
+        _mainDirty = true;
         S.SaveSettings();
         Refresh();
     }
@@ -83,8 +86,8 @@ public sealed class SettingsScene : Scene
         options.AddRange(_ports);
         int i = options.IndexOf(S.Settings.WeatherPort);
         S.Settings.WeatherPort = options[((i + d) % options.Count + options.Count) % options.Count];
+        _weatherDirty = true;
         S.SaveSettings();
-        S.Controller.Connect(S.Settings);
         Refresh();
     }
 
@@ -99,7 +102,8 @@ public sealed class SettingsScene : Scene
                 break;
             case Row.UseController:
                 st.UseController = !st.UseController;
-                S.Controller.Connect(st);
+                S.Controller.ConnectMain(st);
+                _mainDirty = false;
                 break;
         }
         S.SaveSettings();
@@ -117,13 +121,14 @@ public sealed class SettingsScene : Scene
                 case Row.UseController: Toggle(Row.UseController); break;
                 case Row.ControllerSound: Adjust(i, 1); break;
                 case Row.Port:
-                    CyclePort(1);
-                    S.Controller.Connect(S.Settings);
-                    break;
-                case Row.WeatherPort: CycleWeather(1); break;
                 case Row.Reconnect:
                     _ports = SerialLink.Ports();
-                    S.Controller.Connect(S.Settings);
+                    S.Controller.ConnectMain(S.Settings);
+                    _mainDirty = false;
+                    break;
+                case Row.WeatherPort:
+                    S.Controller.ConnectWeather(S.Settings);
+                    _weatherDirty = false;
                     break;
                 case Row.Sensors: S.Game.Scenes.Go(new SensorTestScene(S, () => this)); break;
                 case Row.Back: Back(); break;
@@ -139,6 +144,8 @@ public sealed class SettingsScene : Scene
     {
         S.Cue(Cue.Cancel);
         S.SaveSettings();
+        if (_mainDirty) S.Controller.ConnectMain(S.Settings);
+        if (_weatherDirty) S.Controller.ConnectWeather(S.Settings);
         S.Game.Scenes.Go(_back());
     }
 
