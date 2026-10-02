@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.cs text eol=crlf
+*.csproj text eol=crlf
+*.slnx text eol=crlf
+*.ino text eol=crlf
+*.png binary
+*.jpg binary
+*.ogg binary
+*.ttf binary
