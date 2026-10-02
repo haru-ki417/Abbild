@@ -141,8 +141,34 @@ public sealed class SceneManager
         if (_fade > 0)
         {
             g.Batch.Begin();
-            g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), Color.Black * _fade);
+            DrawWipe(g, _fade, _dir >= 0);
             g.Batch.End();
+        }
+    }
+
+    /// <summary>
+    /// 場面の切り替え：ひし形のタイルが斜めに広がって画面を覆い、次の場面では逆向きに消えていく。
+    /// </summary>
+    private static void DrawWipe(Gfx g, float f, bool closing)
+    {
+        const int tile = 96;
+        int cols = (Gfx.Width / tile) + 2, rows = (Gfx.Height / tile) + 2;
+        float span = cols + rows;
+        // 最後は必ず真っ黒になるように、少し余裕を持たせる
+        float p = f * 1.15f;
+        var origin = new Vector2(0.5f, 0.5f);
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                // 閉じるときは左上から、開くときは右下へ抜けていく
+                float order = (c + r) / span;
+                if (!closing) order = 1 - order;
+                float k = Math.Clamp((p - (order * 0.6f)) / 0.4f, 0, 1);
+                if (k <= 0) continue;
+                float size = tile * 1.45f * k;
+                g.Batch.Draw(g.Pixel, new Vector2(c * tile, r * tile), null, Color.Black, MathF.PI / 4, origin, size, Microsoft.Xna.Framework.Graphics.SpriteEffects.None, 0);
+            }
         }
     }
 }

@@ -13,6 +13,7 @@ public static class Logo
 {
     private static Texture2D? _logo;
     private static Texture2D? _mask;
+    private static readonly RasterizerState Clip = new() { ScissorTestEnable = true, CullMode = CullMode.None };
 
     public static (Texture2D Logo, Texture2D Mask) Get(Gfx g, string text = "Abbild", float size = 208)
     {
@@ -171,9 +172,8 @@ public static class Logo
             var band = Rectangle.Intersect(new Rectangle(bx, dest.Y, bandW, dest.Height), vp);
             if (band.Width > 0)
             {
-                var rs = new RasterizerState { ScissorTestEnable = true, CullMode = CullMode.None };
                 g.Device.ScissorRectangle = band;
-                g.Batch.Begin(blendState: BlendState.Additive, rasterizerState: rs);
+                g.Batch.Begin(blendState: BlendState.Additive, rasterizerState: Clip);
                 g.Batch.Draw(mask, center, null, Color.White * (0.55f * alpha), 0, origin, scale, SpriteEffects.None, 0);
                 g.Batch.End();
             }

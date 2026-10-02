@@ -1,6 +1,7 @@
 using Abbild.Core;
 using Abbild.Engine;
 using Abbild.Scenes;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace Abbild;
@@ -28,7 +29,7 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     {
         s.Settings = new Settings { Fullscreen = false, BgmVolume = 0, SeVolume = 0, UseController = false, TextSpeed = 2 };
         s.ApplyAudioSettings();
-        _script = (options.AutoPlay ? AutoPlay() : options.Only == "fx" ? FxGallery() : Snapshots()).GetEnumerator();
+        _script = (options.AutoPlay ? AutoPlay() : options.Only == "fx" ? FxGallery() : options.Only == "challenges" ? ChallengeGallery() : Snapshots()).GetEnumerator();
         Next();
     }
 
@@ -168,7 +169,7 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
         var run = NewRun(16, 3);
         var dungeon = new DungeonScene(s, run, fromSave: false);
         foreach (var w in Go(dungeon)) yield return w;
-        yield return new Frames(15);
+        yield return new Frames(55);
         yield return new Snap("09-floor-intro");
         yield return new Until(() => dungeon.AwaitingCommand, 900, Every(8, Act.Confirm), "コマンド");
         yield return new Frames(30);
@@ -204,7 +205,12 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
         // 毒の沼のボス
         var bossRun = NewRun(30, 50, seed: 11);
         var boss = new DungeonScene(s, bossRun, fromSave: false);
-        foreach (var w in Go(boss)) yield return w;
+        // 場面の切り替え（ひし形のワイプ）の途中と、ボスの階の入り口
+        yield return new Do(() => scenes.Go(boss, 0.5f));
+        yield return new Frames(12);
+        yield return new Snap("16a-transition");
+        yield return new Frames(76);
+        yield return new Snap("16b-boss-floor-intro");
         yield return new Until(() => boss.AwaitingCommand, 900, Every(8, Act.Confirm), "ボスのコマンド");
         yield return new Frames(40);
         yield return new Snap("16-boss");
@@ -247,6 +253,88 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     }
 
     // ------------------------------------------------------------------
+
+    /// <summary>ミニゲームの舞台を、種類ごとに本番の途中で撮る。</summary>
+    private IEnumerable<AutoWait> ChallengeGallery()
+    {
+        static Act[] Shake(int i) => (i % 6) switch { 0 => [Act.Left], 3 => [Act.Right], _ => [] };
+        static Act[] Breathe(int i) => (i % 240) < 120 ? [Act.Confirm] : [];
+        var list = new (ChallengeKind Kind, int Frames, Func<int, Act[]>? Inject, string Bg)[]
+        {
+            (ChallengeKind.HeartTrial, 200, Every(25, Act.Confirm), "dungeon"),
+            (ChallengeKind.ShakeTrial, 150, Shake, "dungeon"),
+            (ChallengeKind.MashTrial, 240, Every(4, Act.Confirm), "dungeon"),
+            (ChallengeKind.Charge, 100, Shake, "plain"),
+            (ChallengeKind.Alchemy, 120, Shake, "plain"),
+            (ChallengeKind.Meditation, 200, Breathe, "temple"),
+            (ChallengeKind.Glare, 120, null, "cave"),
+            (ChallengeKind.Negotiation, 200, Breathe, "desert"),
+            (ChallengeKind.Rage, 100, Every(3, Act.Confirm), "volcano"),
+            (ChallengeKind.Dowsing, 60, i => [Act.Right], "desert"),
+            (ChallengeKind.Bridge, 200, null, "ice"),
+            (ChallengeKind.Fishing, 220, i => i == 2 ? [Act.Confirm] : i > 150 ? Shake(i) : [], "plain"),
+            (ChallengeKind.BlindDefense, 80, null, "cave"),
+            (ChallengeKind.Iai, 60, null, "temple"),
+            (ChallengeKind.Blacksmith, 105, null, "volcano"),
+            (ChallengeKind.Lockpick, 60, null, "demon"),
+            (ChallengeKind.Thaw, 40, i => [Act.Breath], "ice"),
+            (ChallengeKind.Breath, 70, i => [Act.Breath], "poison"),
+            (ChallengeKind.EscapeRun, 150, Shake, "cave"),
+            (ChallengeKind.Revive, 130, Every(5, Act.Confirm), "final"),
+            (ChallengeKind.ShakeFree, 60, Shake, "divine"),
+        };
+        int n = 0;
+        foreach (var item in list)
+        {
+            var scene = new ChallengeGalleryScene(s, item.Kind, item.Bg);
+            foreach (var w in Go(scene)) yield return w;
+            yield return new Do(() => scene.View.DebugBegin());
+            yield return new Frames(item.Frames, item.Inject);
+            yield return new Snap($"ch-{n++:00}-{item.Kind}");
+            if (item.Kind is ChallengeKind.Iai or ChallengeKind.Lockpick)
+            {
+                if (item.Kind == ChallengeKind.Iai)
+                {
+                    yield return new Until(() => scene.View.Challenge is IaiChallenge { Signaled: true }, 400, null, "合図");
+                    yield return new Frames(3, i => i == 1 ? [Act.Confirm] : []);
+                }
+                else
+                {
+                    yield return new Until(() => scene.View.Challenge.Lamp == LedColor.White, 400, null, "白");
+                    yield return new Frames(2, i => i == 0 ? [Act.Confirm] : []);
+                }
+                yield return new Frames(30);
+                yield return new Snap($"ch-{n++:00}-{item.Kind}-result");
+            }
+        }
+        yield return new Frames(2);
+    }
+
+    /// <summary>ミニゲームだけを出す確認用の場面。</summary>
+    private sealed class ChallengeGalleryScene : Scene
+    {
+        private readonly string _bg;
+
+        public ChallengeGalleryScene(Services s, ChallengeKind kind, string bg) : base(s)
+        {
+            _bg = bg;
+            var ctx = new ChallengeContext(s.Body.Mode, s.Body.Thresholds(s.Settings), 1234, 35);
+            var def = EnemyFactory.Choose(new GameRandom(5), 24, DayOfWeek.Monday);
+            View = new Abbild.Ui.ChallengeView(s, kind, ctx).WithActors(s.Assets.Hero(Gender.Male), s.Assets.Enemy(def.Sprite));
+        }
+
+        public Abbild.Ui.ChallengeView View { get; }
+
+        protected override void Update(float dt) => View.Update(dt);
+
+        public override void Draw()
+        {
+            G.Batch.Begin();
+            Abbild.Ui.Art.Cover(G, S.Assets.Background(_bg), 1.02f, default, new Color(200, 200, 210));
+            G.Batch.End();
+            View.Draw(G, Time);
+        }
+    }
 
     private IEnumerable<AutoWait> FxGallery()
     {

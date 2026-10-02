@@ -95,6 +95,7 @@ public abstract class Challenge
     {
         if (Finished) return;
         Finished = true;
+        Flash = false;
         Outcome = outcome;
         ResultText = text;
         Play(outcome.Success ? Cue.Success : Cue.Buzzer);
@@ -237,6 +238,9 @@ public sealed class HeartTrial : Challenge
             "胸に手を当てるとわかりやすい。速いリズムほど体力が高くなる。",
         ];
 
+    /// <summary>叩いた回数（キーボード）。</summary>
+    public int Taps => _tempo.Count;
+
     public double Bpm => Mode == BodyMode.Sensor ? (_w > 1 ? _sum / _w : double.NaN) : _tempo.Bpm;
 
     protected override void Step(in BodyFrame f)
@@ -284,6 +288,8 @@ public sealed class AlchemyChallenge : Challenge
     }
 
     public int Count { get; private set; }
+
+    public bool Gentle => _gentle;
 
     private (int Min, int Max) Range => _gentle ? (5, 15) : (Mode == BodyMode.Sensor ? 25 : 30, 999);
 
@@ -570,7 +576,7 @@ public sealed class BridgeChallenge : Challenge
 /// <summary>釣り：投げて、待って、緑で巻き赤で止める。</summary>
 public sealed class FishingChallenge : Challenge
 {
-    private enum Stage { Cast, Wait, Fight }
+    public enum Stage { Cast, Wait, Fight }
 
     private Stage _stage = Stage.Cast;
     private double _stageTime;
@@ -595,6 +601,12 @@ public sealed class FishingChallenge : Challenge
 
     private const int ReelTarget = 16;
     private const int TensionLimit = 6;
+
+    /// <summary>いまの段階（画面の絵に使う）。</summary>
+    public Stage Current => _stage;
+
+    /// <summary>糸の張り（0〜1）。</summary>
+    public double Tension => _tension / (double)TensionLimit;
 
     protected override void Step(in BodyFrame f)
     {
@@ -679,6 +691,9 @@ public sealed class BlindDefenseChallenge : Challenge
 
     public int Round => _round;
 
+    /// <summary>いまの攻撃の向き（-1 左 / +1 右 / 0 合図待ち）。</summary>
+    public int Direction => _dir;
+
     protected override void Step(in BodyFrame f)
     {
         _t += f.Dt;
@@ -757,6 +772,9 @@ public sealed class IaiChallenge : Challenge
 
     public double ReactionTime { get; private set; } = double.NaN;
 
+    /// <summary>合図が出たか（画面の絵に使う）。</summary>
+    public bool Signaled => _signaled;
+
     protected override void Step(in BodyFrame f)
     {
         bool act = Mode == BodyMode.Sensor ? f.Shakes > 0 || f.ConfirmPressed : f.ConfirmPressed || f.LeftPressed || f.RightPressed;
@@ -810,6 +828,14 @@ public sealed class BlacksmithChallenge : Challenge
     }
 
     public override string Title => "リズム鍛冶";
+
+    /// <summary>「カーン」までの進み具合（0 で 1 拍目、1 でカーン）。画面の絵に使う。</summary>
+    public double StrikeProgress => _t / (Beat * 3);
+
+    /// <summary>この回は打ち終えたか。</summary>
+    public bool RoundDone => _roundDone;
+
+    public int Hits => _hits;
 
     public override IReadOnlyList<string> Instructions =>
     [
@@ -929,6 +955,9 @@ public sealed class BreathChallenge : Challenge
 
     private const double Need = 1.2;
     private const double Full = 2.5;
+
+    /// <summary>氷を溶かす方か（毒の霧なら false）。</summary>
+    public bool Thaw => _thaw;
 
     public override string Title => _title;
 

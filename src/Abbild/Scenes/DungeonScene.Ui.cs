@@ -204,16 +204,115 @@ public sealed partial class DungeonScene
 
     private void DrawFloorIntro(Gfx g, WaitPanel p)
     {
-        Art.Cover(g, S.Assets.Background("corridor"), 1.08f - (p.T * 0.02f), default, new Color(120, 120, 135));
-        Art.Vignette(g, 0.7f, 0.7f);
-        float a = Math.Min(1, p.T / 0.4f);
+        var biome = _run.Biome;
         bool boss = EnemyFactory.IsBossFloor(_run.Floor);
-        g.TextCentered($"地下 {_run.Floor} 階", new Vector2(Gfx.Width / 2f, 440), 120, (boss ? Palette.Bad : Palette.Gold) * a, bold: true);
-        g.TextCentered(_run.Biome.Name, new Vector2(Gfx.Width / 2f, 560), 56, Color.White * a, bold: true);
-        g.TextCentered(boss ? "強大な気配がする…" : _run.Biome.EffectText, new Vector2(Gfx.Width / 2f, 650), 34, (boss ? Palette.Bad : Palette.Dim) * a);
-        string w = $"{Names.Of(_run.Weather)}{(_run.RealWeather ? "（外の天気）" : "")}　{Names.Of(_run.Day)}曜日";
-        g.TextCentered(w, new Vector2(Gfx.Width / 2f, 720), 30, Palette.Dim * a);
-        DrawProgress(g, new Rectangle(560, 820, 800, 18));
+        var accent = boss ? Palette.Bad : Palette.Of(biome.Led);
+        float t = p.T;
+        float a = Math.Min(1, t / 0.35f);
+
+        // その場所の景色を暗く、ゆっくり近づく（降りてきた感じ）
+        float zoom = 1.16f - (Ease.OutCubic(t / 2.2f) * 0.1f);
+        Art.Cover(g, S.Assets.Background(biome.Background), zoom, default, boss ? new Color(110, 70, 70) : new Color(95, 95, 110));
+        Art.Vignette(g, 0.75f, 0.85f);
+        g.Glow(new Vector2(Gfx.Width / 2f, 540), 900, accent * (0.10f * a));
+        g.Batch.End();
+        g.Batch.Begin();
+        _fx.DrawNormal(g);
+        g.Batch.End();
+        g.Batch.Begin(blendState: BlendState.Additive);
+        _fx.DrawAdditive(g);
+        g.Batch.End();
+        g.Batch.Begin();
+
+        // 中央の帯（左右はぼかす）
+        float bandA = Ease.OutCubic(t / 0.3f);
+        int bandY = 330, bandH = 430;
+        for (int i = 0; i < 24; i++)
+        {
+            float edge = MathF.Min(i, 23 - i) / 6f;
+            float k = Math.Clamp(edge, 0, 1);
+            g.Rect(new Rectangle(Gfx.Width * i / 24, bandY, (Gfx.Width / 24) + 1, bandH), Color.Black * (0.55f * k * bandA));
+        }
+        // 帯の上下の金の線が中央から伸びる
+        float lineW = 1500 * Ease.OutCubic((t - 0.05f) / 0.5f);
+        var cx = Gfx.Width / 2f;
+        g.Rect(cx - (lineW / 2), bandY, lineW, 3, Palette.Frame * a);
+        g.Rect(cx - (lineW / 2), bandY + bandH - 3, lineW, 3, Palette.Frame * a);
+        g.Rect(cx - (lineW / 2), bandY + 7, lineW, 1, accent * (0.6f * a));
+        g.Rect(cx - (lineW / 2), bandY + bandH - 8, lineW, 1, accent * (0.6f * a));
+
+        // 「地下 N 階」：上から落ちてきて止まる
+        float drop = Ease.OutBack(Math.Clamp((t - 0.1f) / 0.45f, 0, 1));
+        var titleCol = boss ? Palette.Bad : Palette.Gold;
+        float ty = 430 - ((1 - drop) * 60);
+        g.TextCentered($"地下 {_run.Floor} 階", new Vector2(cx, ty), 124, titleCol * Math.Clamp((t - 0.1f) / 0.2f, 0, 1), bold: true);
+
+        // 場所の名前（両側に飾り）
+        float na = Math.Clamp((t - 0.35f) / 0.3f, 0, 1);
+        var nm = g.Measure(biome.Name, 58);
+        float ny = 548;
+        g.TextCentered(biome.Name, new Vector2(cx, ny), 58, Color.White * na, bold: true);
+        float ow = 120 * na;
+        g.Rect(cx - (nm.X / 2) - 40 - ow, ny - 2, ow, 3, accent * na);
+        g.Rect(cx + (nm.X / 2) + 40, ny - 2, ow, 3, accent * na);
+        DrawDiamond(g, new Vector2(cx - (nm.X / 2) - 28, ny), 9, accent * na);
+        DrawDiamond(g, new Vector2(cx + (nm.X / 2) + 28, ny), 9, accent * na);
+
+        // 説明と、よく効く・効きにくい属性
+        float da = Math.Clamp((t - 0.55f) / 0.3f, 0, 1);
+        g.TextCentered(boss ? "強大な気配がする…" : biome.EffectText, new Vector2(cx, 628), 34, (boss ? Palette.Bad : new Color(220, 220, 230)) * da);
+        var parts = new List<(string Label, Element E, Color C)>();
+        if (biome.WeakTo != Element.None) parts.Add(("よく効く", biome.WeakTo, Palette.Good));
+        if (biome.Resists != Element.None) parts.Add(("効きにくい", biome.Resists, Palette.Bad));
+        string w = $"{Names.Of(_run.Weather)}{(_run.RealWeather ? "（外の天気）" : "")}・{Names.Of(_run.Day)}曜日";
+        float rowY = 690;
+        float total = g.Measure(w, 28).X;
+        foreach (var pt in parts) total += 60 + g.Measure(pt.Label, 28).X + 12 + 32 + 8 + g.Measure(Names.Of(pt.E), 28).X;
+        float x = cx - (total / 2);
+        g.Text(w, new Vector2(x, rowY - 16), 28, Palette.Dim * da);
+        x += g.Measure(w, 28).X;
+        foreach (var pt in parts)
+        {
+            x += 60;
+            g.Text(pt.Label, new Vector2(x, rowY - 16), 28, pt.C * da);
+            x += g.Measure(pt.Label, 28).X + 12;
+            Icons.Draw(g, Icons.For(pt.E), new Vector2(x, rowY - 16), 30, da);
+            x += 32 + 8;
+            g.Text(Names.Of(pt.E), new Vector2(x, rowY - 16), 28, Color.White * da);
+            x += g.Measure(Names.Of(pt.E), 28).X;
+        }
+
+        // 深さの目盛り
+        DrawDepth(g, new Rectangle(460, 840, 1000, 16), a);
+        if (boss) Art.EdgeGlow(g, new Color(200, 0, 0), 0.35f + (0.15f * MathF.Sin(Time * 5)));
+    }
+
+    private static void DrawDiamond(Gfx g, Vector2 c, float r, Color col) =>
+        g.Batch.Draw(g.Pixel, c, null, col, MathF.PI / 4, new Vector2(0.5f, 0.5f), r * 1.414f, SpriteEffects.None, 0);
+
+    /// <summary>B1F〜B100F の深さの目盛り（場所ごとの色、ボスの階に印、いまの位置に光る印）。</summary>
+    private void DrawDepth(Gfx g, Rectangle r, float alpha)
+    {
+        g.Rect(new Rectangle(r.X - 4, r.Y - 4, r.Width + 8, r.Height + 8), Color.Black * (0.8f * alpha));
+        for (int i = 0; i < 10; i++)
+        {
+            var c = Palette.Of(Biome.All[i].Led);
+            int x0 = r.X + (r.Width * i / 10);
+            int x1 = r.X + (r.Width * (i + 1) / 10);
+            float done = Math.Clamp((_run.Floor - (i * 10)) / 10f, 0, 1);
+            g.Rect(new Rectangle(x0, r.Y, x1 - x0 - 3, r.Height), c * (0.22f * alpha));
+            g.Rect(new Rectangle(x0, r.Y, (int)((x1 - x0 - 3) * done), r.Height), c * (0.85f * alpha));
+            g.Rect(new Rectangle(x0, r.Y, (int)((x1 - x0 - 3) * done), 3), Color.White * (0.35f * alpha));
+            // 10 階ごとのボス
+            DrawDiamond(g, new Vector2(x1 - 2, r.Y + r.Height + 14), 6, (_run.Floor >= (i + 1) * 10 ? Palette.Disabled : Palette.Bad) * alpha);
+        }
+        g.Text("B1F", new Vector2(r.X - 70, r.Y - 10), 24, Palette.Dim * alpha);
+        g.Text("B100F", new Vector2(r.Right + 14, r.Y - 10), 24, Palette.Dim * alpha);
+        float px = r.X + (r.Width * (_run.Floor - 0.5f) / 100f);
+        float pulse = 0.6f + (0.4f * MathF.Sin(Time * 6));
+        g.Glow(new Vector2(px, r.Center.Y), 46, Color.White * (0.5f * pulse * alpha));
+        g.Rect(px - 3, r.Y - 10, 6, r.Height + 20, Color.White * alpha);
+        DrawDiamond(g, new Vector2(px, r.Y - 22), 8, Palette.Gold * alpha);
     }
 
     private void DrawEnemy(Gfx g)

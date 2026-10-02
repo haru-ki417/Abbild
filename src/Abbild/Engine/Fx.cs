@@ -431,7 +431,7 @@ public sealed class Fx
             BiomeEffect.Burn => 0.025f,
             BiomeEffect.Slow => 0.03f,
             BiomeEffect.Miss => 0.02f,
-            BiomeEffect.Poison => 0.06f,
+            BiomeEffect.Poison => 0.14f,
             BiomeEffect.Blessing => 0.05f,
             BiomeEffect.Curse => 0.05f,
             BiomeEffect.Void => 0.04f,
@@ -464,7 +464,7 @@ public sealed class Fx
                 Add(new Particle { Pos = new Vector2(-20, R(0, H)), Vel = new Vector2(R(300, 600), R(-20, 30)), Life = R(3, 6), Size = R(4, 8), EndSize = 4, Color = new Color(240, 200, 130) * 0.7f, EndColor = new Color(200, 150, 80) * 0.3f, Shape = ParticleShape.Pixel });
                 break;
             case 4: // 毒の沼：泡
-                Add(new Particle { Pos = new Vector2(R(0, W), H + 10), Vel = new Vector2(R(-10, 10), R(-90, -40)), Life = R(5, 10), Size = R(10, 22), EndSize = 30, Color = new Color(150, 240, 90) * 0.6f, EndColor = new Color(170, 80, 220) * 0.2f, Shape = ParticleShape.Ring, Additive = true });
+                Add(new Particle { Pos = new Vector2(R(0, W), H + 10), Vel = new Vector2(R(-10, 10), R(-90, -40)), Life = R(4, 8), Size = R(10, 22), EndSize = 30, Color = new Color(150, 240, 90) * 0.45f, EndColor = new Color(170, 80, 220) * 0.2f, Shape = ParticleShape.Ring, Additive = true });
                 break;
             case 5: // 神殿：舞うほこりと光
             case 7: // 神界：光の粒

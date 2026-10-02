@@ -224,7 +224,7 @@ public sealed class CreateScene(Services s) : Scene(s)
     {
         var ctx = new ChallengeContext(S.Body.Mode, S.Body.Thresholds(S.Settings), (ulong)Environment.TickCount64);
         _trial = new ChallengeView(S, TrialKinds[_trialIndex], ctx, cancelable: _trialIndex == 0,
-            lead: $"測定 {_trialIndex + 1} / 3");
+            lead: $"測定 {_trialIndex + 1} / 3").WithActors(S.Assets.Hero(_gender), null);
     }
 
     private void UpdateTrials(float dt)

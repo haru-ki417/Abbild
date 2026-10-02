@@ -215,7 +215,7 @@ public sealed partial class DungeonScene : Scene
         _animTime += adt;
         _fx.Update(adt);
         _fxTop.Update(dt);
-        if (_battle is not null && _wait is not WaitPanel { Kind: PanelKind.FloorIntro }) _fx.Ambient(_run.Biome, dt);
+        if (_battle is not null || _wait is WaitPanel { Kind: PanelKind.FloorIntro }) _fx.Ambient(_run.Biome, dt);
         _redVignette = Math.Max(0, _redVignette - (dt * 1.5f));
         if (S.Controller.LatestWeather is { } w && (!_run.RealWeather || w != _run.Weather)) _run.SetRealWeather(w);
 
@@ -338,7 +338,7 @@ public sealed partial class DungeonScene : Scene
     {
         var ctx = new ChallengeContext(S.Body.Mode, S.Body.Thresholds(S.Settings), _run.Rng.NextULong(),
             _battle?.ReviveTarget ?? 35);
-        return new WaitChallenge(new ChallengeView(S, kind, ctx, cancelable, lead));
+        return new WaitChallenge(new ChallengeView(S, kind, ctx, cancelable, lead).WithActors(S.Assets.Hero(_run.Hero.Gender), _art));
     }
 
     // ------------------------------------------------------------------
@@ -357,7 +357,14 @@ public sealed partial class DungeonScene : Scene
             Autosave();
             S.Cue(Cue.Step, 0.7f);
             S.Controller.Led(_run.Biome.Led);
-            yield return new WaitPanel(PanelKind.FloorIntro, _run.Floor, 0.5f, EnemyFactory.IsBossFloor(_run.Floor) ? 2.6f : 1.6f);
+            // その場所の空気（粒）を、あらかじめ画面いっぱいに漂わせておく
+            _fx.Clear();
+            for (int i = 0; i < 60; i++)
+            {
+                _fx.Ambient(_run.Biome, 0.1f);
+                _fx.Update(0.1f);
+            }
+            yield return new WaitPanel(PanelKind.FloorIntro, _run.Floor, 0.5f, EnemyFactory.IsBossFloor(_run.Floor) ? 2.8f : 1.9f);
 
             // 敵が現れる
             var def = EnemyFactory.Choose(_run.Rng, _run.Floor, _run.Day);

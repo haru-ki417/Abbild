@@ -21,6 +21,7 @@ public sealed class ChallengeView
     private int _lastCount = -1;
     private float _heartPhase;
     private float _lastBpm = 72;
+    private readonly ChallengeStage _stage = new();
 
     public ChallengeView(Services s, ChallengeKind kind, ChallengeContext ctx, bool cancelable = false, string? lead = null)
     {
@@ -39,10 +40,28 @@ public sealed class ChallengeView
 
     public ChallengeOutcome Outcome => _c.Outcome;
 
+    /// <summary>舞台に出す勇者と敵の絵を渡す。</summary>
+    public ChallengeView WithActors(Microsoft.Xna.Framework.Graphics.Texture2D? hero, EnemyArt? enemy)
+    {
+        _stage.Hero = hero;
+        _stage.Enemy = enemy;
+        return this;
+    }
+
+    /// <summary>確認用：説明とカウントダウンを飛ばして、すぐ本番にする。</summary>
+    internal void DebugBegin()
+    {
+        _phase = Phase.Running;
+        _t = 0;
+        _runTime = 0;
+        _s.Body.Reset(_c.WantsBreathGuide);
+    }
+
     public void Update(float dt)
     {
         var input = _s.Input;
         _t += dt;
+        _stage.Update(_c, dt, _phase == Phase.Running, _heartPhase);
         switch (_phase)
         {
             case Phase.Intro:
@@ -163,11 +182,15 @@ public sealed class ChallengeView
             g.TextCentered(_c.Title, new Vector2(Gfx.Width / 2f, 110), 52, Palette.Gold, bold: true);
         }
 
-        // ランプ（コントローラーの LED と同じ色）
+        // 舞台の絵（ミニゲームごと）。暗闇のミニゲームはランプだけ
         var lampColor = Palette.Of(_c.Lamp);
         var lampPos = dark ? center : new Vector2(Gfx.Width / 2f, 300);
         float lampR = dark ? 160 : 90;
-        if (_c.Lamp != LedColor.None)
+        if (ChallengeStage.Supports(_c))
+        {
+            _stage.Draw(g, _c, time, _phase is Phase.Result or Phase.Done, _c.Outcome.Success, _heartPhase);
+        }
+        else if (_c.Lamp != LedColor.None)
         {
             g.Glow(lampPos, lampR * 2.6f, lampColor * 0.55f);
             g.Circle(lampPos, lampR, lampColor);
@@ -186,12 +209,12 @@ public sealed class ChallengeView
             bool inhale = SimulatedHeart.IsInhale(_runTime);
             float k = inhale ? cyc / half : 1 - ((cyc - half) / half);
             float rr = 80 + (Ease.InOutSine(k) * 110);
-            var gp = new Vector2(Gfx.Width / 2f - 480, 470);
+            var gp = new Vector2(Gfx.Width / 2f - 670, 330);
             g.Glow(gp, rr * 1.4f, new Color(90, 160, 255) * 0.25f);
             g.Ring(gp, rr, 6, new Color(140, 200, 255));
             bool holding = _s.Input.Held(Act.Confirm);
             g.Circle(gp, 26, holding == inhale ? Palette.Good : Palette.Bad);
-            g.TextCentered(inhale ? "吸って…（押す）" : "吐いて…（離す）", new Vector2(gp.X, gp.Y + 250), 36, Color.White);
+            g.TextCentered(inhale ? "吸って…（押す）" : "吐いて…（離す）", new Vector2(gp.X, gp.Y + 230), 36, Color.White);
         }
 
         // 心拍
@@ -199,7 +222,7 @@ public sealed class ChallengeView
         {
             float beat = _heartPhase % 1f;
             float pop = beat < 0.15f ? 1 + ((0.15f - beat) * 2.4f) : 1;
-            var hp = new Vector2(Gfx.Width / 2f + 480, 430);
+            var hp = new Vector2(Gfx.Width / 2f + 670, 290);
             g.TextCentered("♥", hp, 150 * pop, Palette.Hp, bold: true);
             g.TextCentered($"{_lastBpm:0}", new Vector2(hp.X, hp.Y + 130), 54, Color.White, bold: true);
             g.TextCentered("bpm", new Vector2(hp.X, hp.Y + 180), 28, Palette.Dim);
@@ -209,7 +232,7 @@ public sealed class ChallengeView
         bool heartText = _c.ShowsHeart && _c.Status.StartsWith('♥');
         if (!string.IsNullOrEmpty(_c.Status) && _phase == Phase.Running && !heartText)
         {
-            g.TextCentered(_c.Status, new Vector2(Gfx.Width / 2f, dark ? 760 : 520), dark ? 48 : 64, Color.White, bold: true);
+            g.TextCentered(_c.Status, new Vector2(Gfx.Width / 2f, dark ? 760 : 592), dark ? 48 : 60, Color.White, bold: true);
         }
 
         // 傾きのメーター
@@ -246,7 +269,7 @@ public sealed class ChallengeView
 
         if (_phase is Phase.Result or Phase.Done)
         {
-            var rr = new Rectangle(460, 440, 1000, 150);
+            var rr = new Rectangle(460, 560, 1000, 130);
             g.Window(rr, 0.95f, border: _c.Outcome.Success ? Palette.Good : Palette.Bad);
             g.TextCentered(_c.ResultText, new Vector2(rr.Center.X, rr.Center.Y), 52, _c.Outcome.Success ? Color.White : Palette.Bad);
         }
