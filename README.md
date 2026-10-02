@@ -3,13 +3,13 @@
 **体で遊ぶ、100 階層のダンジョン RPG。**
 心拍・振り・傾き・息で戦う自作コントローラーにも、ふつうのキーボード・ゲームパッドにも対応しています。
 
-![タイトル](docs/screenshots/01-title.png)
+![タイトル](docs/screenshots/01-title.jpg)
 
 | 戦闘 | ボス |
 | --- | --- |
-| ![戦闘](docs/screenshots/10-battle-command.png) | ![ボス](docs/screenshots/16-boss.png) |
+| ![戦闘](docs/screenshots/10-battle-command.jpg) | ![ボス](docs/screenshots/16-boss.jpg) |
 | **瞑想（呼吸のガイド）** | **凝視（心拍検知）** |
-| ![瞑想](docs/screenshots/15-challenge-meditation.png) | ![凝視](docs/screenshots/18-enemy-skill-running.png) |
+| ![瞑想](docs/screenshots/15-challenge-meditation.jpg) | ![凝視](docs/screenshots/18-enemy-skill-running.jpg) |
 
 ## どんなゲームか
 

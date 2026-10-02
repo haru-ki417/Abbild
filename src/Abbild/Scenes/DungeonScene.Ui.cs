@@ -323,12 +323,12 @@ public sealed partial class DungeonScene
         float lineH = size * 1.5f;
         int maxLines = 4;
         var lines = new List<(string Text, bool Current)>();
-        // 古いものから、折り返した行で後ろ 4 行を出す
-        for (int i = 0; i < _log.Count; i++)
+        // 新しいほうから 4 行ぶんだけ折り返す（毎フレーム全部を測らない）
+        for (int i = _log.Count - 1; i >= 0 && lines.Count < maxLines; i--)
         {
             bool current = i == _log.Count - 1;
             string text = current ? _typer.Visible : _log[i];
-            foreach (var l in g.Wrap(text, size, r.Width - 80)) lines.Add((l, current));
+            lines.InsertRange(0, g.Wrap(text, size, r.Width - 80).Select(l => (l, current)));
         }
         int start = Math.Max(0, lines.Count - maxLines);
         float y = r.Y + 30;

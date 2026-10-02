@@ -22,6 +22,7 @@ public sealed class TitleScene(Services s) : Scene(s)
         [
             new("はじめから"),
             new("つづきから", _save is not null, cont),
+            new("あそびかた"),
             new("せってい"),
             new("クレジット"),
             new("おわる"),
@@ -38,7 +39,7 @@ public sealed class TitleScene(Services s) : Scene(s)
         catch (UnauthorizedAccessException) { return null; }
     }
 
-    private static Rectangle MenuArea => new(Gfx.Width / 2 - 280, 640, 560, 70 * 5);
+    private static Rectangle MenuArea => new(Gfx.Width / 2 - 280, 570, 560, 70 * 6);
 
     private static Rectangle ConfirmArea => new(Gfx.Width / 2 - 300, 640, 600, 128);
 
@@ -63,12 +64,15 @@ public sealed class TitleScene(Services s) : Scene(s)
                 S.Game.Scenes.Go(new DungeonScene(S, _save.ToRun(), fromSave: true));
                 break;
             case 2:
-                S.Game.Scenes.Go(new SettingsScene(S, () => new TitleScene(S)));
+                S.Game.Scenes.Go(new CreditsScene(S, "howto.txt", "あそびかた"));
                 break;
             case 3:
-                S.Game.Scenes.Go(new CreditsScene(S));
+                S.Game.Scenes.Go(new SettingsScene(S, () => new TitleScene(S)));
                 break;
             case 4:
+                S.Game.Scenes.Go(new CreditsScene(S));
+                break;
+            case 5:
                 S.Game.Exit();
                 break;
         }
@@ -84,10 +88,10 @@ public sealed class TitleScene(Services s) : Scene(s)
 
         // ロゴ
         float appear = Ease.OutCubic(Time / 1.2f);
-        var logoPos = new Vector2(Gfx.Width / 2f, 270 - ((1 - appear) * 40));
+        var logoPos = new Vector2(Gfx.Width / 2f, 235 - ((1 - appear) * 40));
         g.Glow(logoPos, 520, Palette.Gold * 0.12f * appear);
         g.TextCentered("Abbild", logoPos, 190, Palette.Gold * appear, bold: true);
-        g.TextCentered("～ 古の迷宮と勇者の魂 ～", new Vector2(Gfx.Width / 2f, 420), 44, Color.White * appear, bold: true);
+        g.TextCentered("～ 古の迷宮と勇者の魂 ～", new Vector2(Gfx.Width / 2f, 385), 44, Color.White * appear, bold: true);
 
         if (_asking)
         {

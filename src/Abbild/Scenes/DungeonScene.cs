@@ -104,7 +104,7 @@ public sealed partial class DungeonScene : Scene
         public static Rectangle ChoiceRect(int n) => new(700, 560 - (n * 66), 520, n * 66);
     }
 
-    private sealed class WaitPanel(PanelKind kind, object data, float minTime = 0.6f) : Wait
+    private sealed class WaitPanel(PanelKind kind, object data, float minTime = 0.6f, float autoTime = 6f) : Wait
     {
         private float _t;
         public PanelKind Kind { get; } = kind;
@@ -114,7 +114,7 @@ public sealed partial class DungeonScene : Scene
         public override bool Update(DungeonScene d, float dt)
         {
             _t += dt;
-            return _t > minTime && (d.In.Pressed(Act.Confirm) || d.In.MouseClicked || _t > 6f);
+            return _t > minTime && (d.In.Pressed(Act.Confirm) || d.In.MouseClicked || _t > autoTime);
         }
     }
 
@@ -145,7 +145,6 @@ public sealed partial class DungeonScene : Scene
     private float _displayHp;
     private float _displayMp;
     private float _enemyDisplayHp;
-    private bool _bossIntro;
 
     public DungeonScene(Services s, RunState run, bool fromSave) : base(s)
     {
@@ -305,8 +304,7 @@ public sealed partial class DungeonScene : Scene
             Autosave();
             S.Cue(Cue.Step, 0.7f);
             S.Controller.Led(_run.Biome.Led);
-            _bossIntro = EnemyFactory.IsBossFloor(_run.Floor);
-            yield return new WaitPanel(PanelKind.FloorIntro, _run.Floor, 0.5f);
+            yield return new WaitPanel(PanelKind.FloorIntro, _run.Floor, 0.5f, EnemyFactory.IsBossFloor(_run.Floor) ? 2.6f : 1.6f);
 
             // 敵が現れる
             var def = EnemyFactory.Choose(_run.Rng, _run.Floor, _run.Day);
@@ -584,7 +582,11 @@ public sealed partial class DungeonScene : Scene
         try { S.Store.Save(_run); }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
-        S.Records.BestFloor = Math.Max(S.Records.BestFloor, _run.Floor);
+        if (_run.Floor > S.Records.BestFloor)
+        {
+            S.Records.BestFloor = _run.Floor;
+            S.SaveRecords();
+        }
     }
 
     private Vector2 EnemyFeet => new(960, 660);

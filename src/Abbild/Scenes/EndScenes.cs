@@ -118,21 +118,26 @@ public sealed class EndingScene(Services s, RunState run) : Scene(s)
     }
 }
 
-public sealed class CreditsScene(Services s) : Scene(s)
+/// <summary>文章を読む画面（クレジット・あそびかた）。</summary>
+public sealed class CreditsScene(Services s, string file = "credits.txt", string? title = null) : Scene(s)
 {
     private string[] _lines = [];
     private float _scroll;
 
-    public static string[] LoadCredits(Services s)
+    public static string[] LoadCredits(Services s) => LoadText(s, "credits.txt");
+
+    public static string[] LoadText(Services s, string file)
     {
-        string path = Path.Combine(s.Assets.Root, "credits.txt");
+        string path = Path.Combine(s.Assets.Root, file);
         return File.Exists(path) ? File.ReadAllLines(path) : ["Abbild", "Haruki Takahashi"];
     }
 
     public override void Enter()
     {
         S.Audio.PlayBgm("title");
-        _lines = LoadCredits(S);
+        var lines = LoadText(S, file).ToList();
+        if (title is not null) lines.InsertRange(0, [$"― {title} ―", ""]);
+        _lines = [.. lines];
     }
 
     protected override void Update(float dt)

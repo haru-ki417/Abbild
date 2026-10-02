@@ -2,10 +2,10 @@ namespace Abbild.Tests;
 
 public class BalanceTests(ITestOutputHelper output)
 {
-    private static (double ClearRate, double MedianFloor, double AvgRevives, double AvgLevel) Simulate(Difficulty d, double skill, int runs)
+    private static (double ClearRate, double MedianFloor, double AvgRevives, double AvgLevel) Simulate(Difficulty d, double skill, int runs, StartingStats? stats = null)
     {
         var bot = new Bot(skill);
-        var results = Enumerable.Range(0, runs).Select(i => bot.Play((ulong)(i * 7919 + 13), d)).ToList();
+        var results = Enumerable.Range(0, runs).Select(i => bot.Play((ulong)(i * 7919 + 13), d, stats)).ToList();
         var floors = results.Select(r => r.Floor).OrderBy(x => x).ToList();
         return (results.Count(r => r.Cleared) / (double)runs, floors[runs / 2], results.Average(r => r.RevivesUsed), results.Average(r => r.Level));
     }
@@ -50,5 +50,15 @@ public class BalanceTests(ITestOutputHelper output)
         }
         double at50 = levels.Average(r => r.LevelAt[5]);
         Assert.InRange(at50, 15, 35);
+    }
+
+    [Fact]
+    public void 測定で最高の能力を出しても_ふつうが簡単になりすぎない()
+    {
+        var best = new StartingStats(150, 20, 20, Talent.Power);
+        var (rate, median, _, _) = Simulate(Difficulty.Normal, 0.6, 200, best);
+        var (avg, _, _, _) = Simulate(Difficulty.Normal, 0.6, 200);
+        output.WriteLine($"Normal skill0.6: 最高の能力 {rate:P0} (floor {median}) / 平均の能力 {avg:P0}");
+        Assert.True(rate - avg < 0.25, "能力の差でクリア率が大きく変わりすぎない");
     }
 }

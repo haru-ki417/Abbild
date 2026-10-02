@@ -25,8 +25,8 @@ public sealed class AbbildGame : Game
         _options = options;
         _graphics = new GraphicsDeviceManager(this)
         {
-            PreferredBackBufferWidth = 1600,
-            PreferredBackBufferHeight = 900,
+            PreferredBackBufferWidth = 1280,
+            PreferredBackBufferHeight = 720,
             HardwareModeSwitch = false,
             SynchronizeWithVerticalRetrace = true,
             GraphicsProfile = GraphicsProfile.HiDef,
@@ -102,8 +102,8 @@ public sealed class AbbildGame : Game
         else
         {
             _graphics.IsFullScreen = false;
-            _graphics.PreferredBackBufferWidth = 1600;
-            _graphics.PreferredBackBufferHeight = 900;
+            _graphics.PreferredBackBufferWidth = 1280;
+            _graphics.PreferredBackBufferHeight = 720;
         }
         _graphics.ApplyChanges();
     }

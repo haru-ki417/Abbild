@@ -6,3 +6,4 @@
 *.ico binary
 *.bmp binary
 *.txt -text
+*.cmd text eol=crlf
