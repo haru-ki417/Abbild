@@ -28,7 +28,7 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     {
         s.Settings = new Settings { Fullscreen = false, BgmVolume = 0, SeVolume = 0, UseController = false, TextSpeed = 2 };
         s.ApplyAudioSettings();
-        _script = (options.AutoPlay ? AutoPlay() : Snapshots()).GetEnumerator();
+        _script = (options.AutoPlay ? AutoPlay() : options.Only == "fx" ? FxGallery() : Snapshots()).GetEnumerator();
         Next();
     }
 
@@ -247,6 +247,24 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     }
 
     // ------------------------------------------------------------------
+
+    private IEnumerable<AutoWait> FxGallery()
+    {
+        string[] kinds = ["slash", "crit", "fire", "ice", "thunder", "poison", "holy", "heal", "claw", "pillar", "shatter"];
+        int[] floors = [3, 12, 25, 34, 45, 55, 66, 75, 85, 95, 50];
+        for (int i = 0; i < kinds.Length; i++)
+        {
+            var d = new DungeonScene(s, NewRun(30, floors[i], seed: (ulong)(i + 3)), fromSave: false);
+            foreach (var w in Go(d)) yield return w;
+            yield return new Until(() => d.AwaitingCommand, 900, Every(8, Act.Confirm), "コマンド");
+            yield return new Frames(120);
+            string k = kinds[i];
+            yield return new Do(() => d.DebugFx(k));
+            yield return new Frames(k is "slash" or "crit" or "thunder" or "claw" ? 4 : k == "shatter" ? 14 : 10);
+            yield return new Snap($"fx-{i:00}-{k}");
+        }
+        yield return new Frames(2);
+    }
 
     private IEnumerable<AutoWait> AutoPlay()
     {

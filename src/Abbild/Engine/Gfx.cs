@@ -22,6 +22,8 @@ public static class Palette
     public static readonly Color Good = new(110, 220, 130);
     public static readonly Color Bad = new(240, 90, 90);
     public static readonly Color Cursor = new(110, 230, 255);
+    public static readonly Color Frame = new(201, 162, 74);
+    public static readonly Color Gem = new(90, 200, 255);
 
     public static Color Of(Abbild.Core.LedColor c) => c switch
     {
@@ -116,12 +118,70 @@ public sealed class Gfx(GraphicsDevice device, FontSystem fonts)
         Rect(new Rectangle(r.Right - t, r.Y, t, r.Height), c);
     }
 
-    /// <summary>WinForms 版から受け継いだ「白とグレーの二重枠」のウィンドウ。</summary>
+    /// <summary>
+    /// 装飾つきの窓：影・上から下へのグラデーション・金の縁（光と影）・四隅の飾り。
+    /// border を渡すと縁の色を変えられる（成功＝緑、失敗＝赤 など）。
+    /// </summary>
     public void Window(Rectangle r, float alpha = 1f, Color? fill = null, Color? border = null)
     {
-        Rect(r, (fill ?? Palette.Window) * alpha);
-        Outline(r, (border ?? Palette.Border) * alpha, 3);
-        Outline(new Rectangle(r.X + 6, r.Y + 6, r.Width - 12, r.Height - 12), Palette.BorderInner * (0.8f * alpha), 1);
+        if (alpha <= 0) return;
+        // 影
+        Rect(new Rectangle(r.X + 8, r.Y + 10, r.Width, r.Height), Color.Black * (0.35f * alpha));
+        // 中身（上が少し明るい）
+        var top = fill ?? new Color(26, 32, 68, 236);
+        var bottom = fill is null ? new Color(8, 10, 26, 242) : Color.Lerp(fill.Value, Color.Black, 0.35f);
+        const int bands = 10;
+        for (int i = 0; i < bands; i++)
+        {
+            int y0 = r.Y + (r.Height * i / bands);
+            int y1 = r.Y + (r.Height * (i + 1) / bands);
+            Rect(new Rectangle(r.X, y0, r.Width, y1 - y0), Color.Lerp(top, bottom, i / (float)(bands - 1)) * alpha);
+        }
+        // 縁：外の黒 → 金（左上が明るく、右下が暗い）→ 内側の細い線
+        var gold = border ?? Palette.Frame;
+        var light = Color.Lerp(gold, Color.White, 0.45f);
+        var dark = Color.Lerp(gold, Color.Black, 0.45f);
+        Outline(new Rectangle(r.X - 2, r.Y - 2, r.Width + 4, r.Height + 4), Color.Black * (0.8f * alpha), 2);
+        Rect(new Rectangle(r.X, r.Y, r.Width, 3), light * alpha);
+        Rect(new Rectangle(r.X, r.Y, 3, r.Height), light * alpha);
+        Rect(new Rectangle(r.X, r.Bottom - 3, r.Width, 3), dark * alpha);
+        Rect(new Rectangle(r.Right - 3, r.Y, 3, r.Height), dark * alpha);
+        Outline(new Rectangle(r.X + 3, r.Y + 3, r.Width - 6, r.Height - 6), gold * (0.9f * alpha), 1);
+        Outline(new Rectangle(r.X + 8, r.Y + 8, r.Width - 16, r.Height - 16), gold * (0.28f * alpha), 1);
+        // 四隅の飾り（ひし形＋宝石）
+        if (r.Width >= 120 && r.Height >= 80)
+        {
+            Corner(new Vector2(r.X + 2, r.Y + 2), gold, alpha);
+            Corner(new Vector2(r.Right - 2, r.Y + 2), gold, alpha);
+            Corner(new Vector2(r.X + 2, r.Bottom - 2), gold, alpha);
+            Corner(new Vector2(r.Right - 2, r.Bottom - 2), gold, alpha);
+        }
+    }
+
+    private void Corner(Vector2 c, Color gold, float alpha)
+    {
+        // 4px 単位のひし形
+        for (int i = -3; i <= 3; i++)
+        {
+            int w = 3 - Math.Abs(i);
+            Rect(c.X - (w * 4) - 2, c.Y + (i * 4) - 2, (w * 8) + 4, 4, Color.Black * (0.85f * alpha));
+        }
+        for (int i = -2; i <= 2; i++)
+        {
+            int w = 2 - Math.Abs(i);
+            Rect(c.X - (w * 4) - 2, c.Y + (i * 4) - 2, (w * 8) + 4, 4, (i < 0 ? Color.Lerp(gold, Color.White, 0.4f) : gold) * alpha);
+        }
+        Rect(c.X - 2, c.Y - 2, 4, 4, Palette.Gem * alpha);
+    }
+
+    /// <summary>見出しつきの窓（上に札が出る）。</summary>
+    public void TitledWindow(Rectangle r, string title, float alpha = 1f, Color? border = null)
+    {
+        Window(r, alpha, border: border);
+        var m = Measure(title, 30);
+        var tab = new Rectangle(r.X + 28, r.Y - 22, (int)m.X + 44, 44);
+        Window(tab, alpha, new Color(60, 44, 18, 245), border);
+        Text(title, new Vector2(tab.X + 22, tab.Y + 5), 30, Palette.Gold * alpha);
     }
 
     public void Circle(Vector2 center, float radius, Color c) =>
@@ -148,19 +208,37 @@ public sealed class Gfx(GraphicsDevice device, FontSystem fonts)
         Batch.Draw(_pixel, a, null, c, MathF.Atan2(d.Y, d.X), new Vector2(0, 0.5f), new Vector2(d.Length(), thickness), SpriteEffects.None, 0);
     }
 
-    /// <summary>ゲージ（中身・背景・枠）。</summary>
-    public void Bar(Rectangle r, float ratio, Color fill, Color back, Color? frame = null)
+    /// <summary>ゲージ。trail を渡すと、減った分が白く残って追いかける。</summary>
+    public void Bar(Rectangle r, float ratio, Color fill, Color back, Color? frame = null, float trail = -1, bool ticks = true)
     {
         ratio = Math.Clamp(ratio, 0, 1);
-        Rect(r, new Color(28, 28, 36));
-        Rect(new Rectangle(r.X, r.Y, r.Width, r.Height), back * 0.55f);
+        // 外枠（黒 → 縁）
+        Rect(new Rectangle(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6), Color.Black * 0.85f);
+        Rect(r, Color.Lerp(back, Color.Black, 0.55f));
         int w = (int)(r.Width * ratio);
+        if (trail > ratio)
+        {
+            int tw = (int)(r.Width * Math.Clamp(trail, 0, 1));
+            Rect(new Rectangle(r.X + w, r.Y, tw - w, r.Height), new Color(255, 250, 230) * 0.85f);
+        }
         if (w > 0)
         {
+            var light = Color.Lerp(fill, Color.White, 0.35f);
+            var dark = Color.Lerp(fill, Color.Black, 0.3f);
+            int hTop = Math.Max(2, r.Height / 3);
             Rect(new Rectangle(r.X, r.Y, w, r.Height), fill);
-            Rect(new Rectangle(r.X, r.Y, w, Math.Max(1, r.Height / 3)), Color.White * 0.25f);
+            Rect(new Rectangle(r.X, r.Y, w, hTop), light);
+            Rect(new Rectangle(r.X, r.Bottom - Math.Max(2, r.Height / 4), w, Math.Max(2, r.Height / 4)), dark);
         }
-        Outline(r, frame ?? Color.White * 0.9f, 2);
+        if (ticks && r.Width >= 160)
+        {
+            for (int i = 1; i < 10; i++)
+            {
+                int x = r.X + (r.Width * i / 10);
+                Rect(new Rectangle(x, r.Y, 2, r.Height), Color.Black * 0.28f);
+            }
+        }
+        Outline(r, frame ?? new Color(220, 200, 150) * 0.9f, 2);
     }
 
     // ---- 文字 ----

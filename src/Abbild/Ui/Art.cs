@@ -29,6 +29,22 @@ public static class Art
         }
     }
 
+    /// <summary>画面のふちを色づける（ダメージ・ピンチの合図）。</summary>
+    public static void EdgeGlow(Gfx g, Color c, float strength)
+    {
+        const int steps = 16;
+        for (int i = 0; i < steps; i++)
+        {
+            float k = 1 - (i / (float)steps);
+            float a = strength * k * k;
+            int t = 10;
+            g.Rect(0, i * t, Gfx.Width, t, c * a);
+            g.Rect(0, Gfx.Height - ((i + 1) * t), Gfx.Width, t, c * a);
+            g.Rect(i * t, 0, t, Gfx.Height, c * a);
+            g.Rect(Gfx.Width - ((i + 1) * t), 0, t, Gfx.Height, c * a);
+        }
+    }
+
     /// <summary>敵を描く（WinForms 版の動き方を受け継ぐ）。</summary>
     public static void Enemy(Gfx g, EnemyArt art, EnemyDef def, Vector2 feet, float time, float scaleMul, Color color, bool attacking, float attackT)
     {

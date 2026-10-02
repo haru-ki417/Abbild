@@ -4,7 +4,7 @@ using Microsoft.Xna.Framework;
 
 namespace Abbild.Ui;
 
-public sealed record MenuItem(string Label, bool Enabled = true, string Right = "", string Description = "", object? Tag = null);
+public sealed record MenuItem(string Label, bool Enabled = true, string Right = "", string Description = "", object? Tag = null, string? Icon = null);
 
 /// <summary>縦に並んだ選択肢。キー・パッド・マウスで選べる。</summary>
 public sealed class Menu
@@ -111,13 +111,29 @@ public sealed class Menu
             bool sel = i == Index && active;
             if (sel)
             {
-                float pulse = 0.18f + (0.08f * MathF.Sin(time * 6));
-                g.Rect(new Rectangle(r.X, r.Y + 4, r.Width, r.Height - 8), Palette.Cursor * pulse);
-                DrawCursor(g, new Vector2(r.X + 18, r.Center.Y), time);
+                // 選んでいる行：左から右へ薄くなる金の帯＋左の縦線
+                float pulse = 0.85f + (0.15f * MathF.Sin(time * 6));
+                var band = new Rectangle(r.X, r.Y + 4, r.Width, r.Height - 8);
+                const int steps = 12;
+                for (int k = 0; k < steps; k++)
+                {
+                    int x0 = band.X + (band.Width * k / steps);
+                    int x1 = band.X + (band.Width * (k + 1) / steps);
+                    g.Rect(new Rectangle(x0, band.Y, x1 - x0, band.Height), Palette.Gold * (0.32f * (1 - (k / (float)steps)) * pulse));
+                }
+                g.Rect(new Rectangle(band.X, band.Y, 4, band.Height), Palette.Gold * pulse);
+                DrawCursor(g, new Vector2(r.X + 20, r.Center.Y), time);
             }
             var color = !it.Enabled ? Palette.Disabled : sel ? Color.White : Palette.Text * 0.92f;
             float ty = r.Y + ((r.Height - FontSize) / 2) - 2;
-            g.Text(it.Label, new Vector2(r.X + 44, ty), FontSize, color);
+            float lx = r.X + 44;
+            if (it.Icon is not null)
+            {
+                float isz = Math.Min(40, r.Height - 14);
+                Icons.Draw(g, it.Icon, new Vector2(lx, r.Center.Y - (isz / 2)), isz, it.Enabled ? 1f : 0.4f);
+                lx += isz + 12;
+            }
+            g.Text(it.Label, new Vector2(lx, ty), FontSize, color);
             if (!string.IsNullOrEmpty(it.Right))
             {
                 g.TextRight(it.Right, new Vector2(r.Right - 16, ty), FontSize, it.Enabled ? (sel ? Palette.Gold : Palette.Dim) : Palette.Disabled);

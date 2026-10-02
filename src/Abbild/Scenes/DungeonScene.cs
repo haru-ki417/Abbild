@@ -140,10 +140,19 @@ public sealed partial class DungeonScene : Scene
     private float _enemyShake;
     private float _enemyAttackT = -1;
     private float _enemyDeath = -1;
+    private readonly Fx _fx = new();
+
+    /// <summary>窓より手前に出すエフェクト（回復・こちらのダメージ・レベルアップ）。</summary>
+    private readonly Fx _fxTop = new();
+    private float _hitStop;
+    private float _animTime;
+    private float _redVignette;
     private float _enemyAppear;
     private float _heroPanelShake;
     private float _displayHp;
     private float _displayMp;
+    private float _hpTrail;
+    private float _enemyTrail;
     private float _enemyDisplayHp;
 
     public DungeonScene(Services s, RunState run, bool fromSave) : base(s)
@@ -196,6 +205,18 @@ public sealed partial class DungeonScene : Scene
     protected override void Update(float dt)
     {
         _run.PlaySeconds += dt;
+        // ヒットストップ：当たった瞬間、ほんの少しだけ動きを止める
+        float adt = dt;
+        if (_hitStop > 0)
+        {
+            _hitStop -= dt;
+            adt = dt * 0.05f;
+        }
+        _animTime += adt;
+        _fx.Update(adt);
+        _fxTop.Update(dt);
+        if (_battle is not null && _wait is not WaitPanel { Kind: PanelKind.FloorIntro }) _fx.Ambient(_run.Biome, dt);
+        _redVignette = Math.Max(0, _redVignette - (dt * 1.5f));
         if (S.Controller.LatestWeather is { } w && (!_run.RealWeather || w != _run.Weather)) _run.SetRealWeather(w);
 
         // 演出の時間を進める
@@ -204,13 +225,21 @@ public sealed partial class DungeonScene : Scene
         _enemyFlash = Math.Max(0, _enemyFlash - (dt * 4));
         _enemyShake = Math.Max(0, _enemyShake - (dt * 3));
         _heroPanelShake = Math.Max(0, _heroPanelShake - (dt * 3));
-        if (_enemyAttackT >= 0) { _enemyAttackT += dt * 2.2f; if (_enemyAttackT > 1) _enemyAttackT = -1; }
-        if (_enemyDeath >= 0) _enemyDeath = Math.Min(1, _enemyDeath + (dt * 1.2f));
+        if (_enemyAttackT >= 0) { _enemyAttackT += adt * 2.2f; if (_enemyAttackT > 1) _enemyAttackT = -1; }
+        if (_enemyDeath >= 0) _enemyDeath = Math.Min(1, _enemyDeath + (adt * 2.2f));
         _enemyAppear = Math.Min(1, _enemyAppear + (dt * 1.6f));
         var h = _run.Hero;
         _displayHp += (h.Hp - _displayHp) * Math.Min(1, dt * 6);
+        // 減った分の白いあとは、少し遅れてから追いかける
+        if (_hpTrail < _displayHp) _hpTrail = _displayHp;
+        else _hpTrail = Math.Max(_displayHp, _hpTrail - (dt * Math.Max(20, h.MaxHp * 0.6f) * (_heroFlash > 0.3f ? 0 : 1)));
         _displayMp += (h.Mp - _displayMp) * Math.Min(1, dt * 6);
-        if (_battle is not null) _enemyDisplayHp += (_battle.Enemy.Hp - _enemyDisplayHp) * Math.Min(1, dt * 5);
+        if (_battle is not null)
+        {
+            _enemyDisplayHp += (_battle.Enemy.Hp - _enemyDisplayHp) * Math.Min(1, dt * 5);
+            if (_enemyTrail < _enemyDisplayHp) _enemyTrail = _enemyDisplayHp;
+            else if (_hitStop <= 0 && _enemyFlash < 0.4f) _enemyTrail = Math.Max(_enemyDisplayHp, _enemyTrail - (dt * Math.Max(20, _battle.Enemy.MaxHp * 0.7f)));
+        }
         _typer.Update(dt, S.TextCps);
         Art.Age(_popups, dt);
 
@@ -234,31 +263,51 @@ public sealed partial class DungeonScene : Scene
         switch (e.Kind)
         {
             case BattleEventKind.EnemyDamaged:
+            {
                 _enemyFlash = 1;
                 _enemyShake = e.Critical ? 1.4f : 1;
-                _popups.Add(new Art.Popup { Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = EnemyCenter + new Vector2(0, -40), Color = e.Critical ? Palette.Gold : Color.White, Size = e.Critical ? 96 : 76 });
-                if (e.Critical) _shake = Math.Max(_shake, 0.35f);
-                if (_battle?.Enemy.IsDead == true) _enemyDeath = 0;
+                float size = Math.Clamp(EnemyHeightOnScreen, 220, 520);
+                if (e.Element == Element.None) _fx.Slash(EnemyCenter, size, e.Critical);
+                else _fx.Element(e.Element, EnemyCenter, size);
+                _hitStop = e.Critical ? 0.14f : 0.07f;
+                _popups.Add(new Art.Popup { Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = EnemyCenter + new Vector2(0, -40), Color = e.Critical ? Palette.Gold : Color.White, Size = e.Critical ? 104 : 80 });
+                if (e.Critical) _shake = Math.Max(_shake, 0.4f);
+                if (_battle?.Enemy.IsDead == true)
+                {
+                    _enemyDeath = 0;
+                    _hitStop = 0.22f;
+                    _shake = Math.Max(_shake, 0.5f);
+                    _fx.Shatter(EnemyBounds, _art?.Average ?? Color.Gray, _battle.Enemy.IsBoss ? 320 : 170);
+                }
                 break;
+            }
             case BattleEventKind.HeroDamaged:
                 if (e.Amount > 0)
                 {
                     _heroFlash = 1;
                     _heroPanelShake = 1;
+                    _redVignette = Math.Min(1, 0.5f + (e.Amount / (float)Math.Max(1, _run.Hero.MaxHp)));
+                    _fxTop.Sparks(new Vector2(300, 860), 14, new Color(255, 80, 60), 500);
+                    _fxTop.Claw(new Vector2(960, 560), e.Cue == Cue.BigDamage);
                     _popups.Add(new Art.Popup { Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = new Vector2(300, 790), Color = Palette.Bad, Size = 70 });
                 }
                 hold = string.IsNullOrEmpty(e.Text) ? 0.25f : 0.7f;
                 break;
             case BattleEventKind.HeroHealed:
-                if (e.Amount > 0) _popups.Add(new Art.Popup { Text = "+" + e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = new Vector2(300, 790), Color = Palette.Good, Size = 64 });
+                if (e.Amount > 0)
+                {
+                    _popups.Add(new Art.Popup { Text = "+" + e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = new Vector2(300, 790), Color = Palette.Good, Size = 64 });
+                    _fxTop.Heal(new Vector2(300, 930), 480);
+                }
                 hold = 0.25f;
                 break;
             case BattleEventKind.EnemyHealed:
                 _popups.Add(new Art.Popup { Text = "+" + e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = EnemyCenter, Color = Palette.Good, Size = 64 });
+                _fx.Heal(EnemyFeet, 320);
                 break;
             case BattleEventKind.EnemyAttack:
                 _enemyAttackT = 0;
-                hold = 0.2f;
+                hold = 0.25f;
                 break;
             case BattleEventKind.Shake:
                 _shake = e.Amount >= 2 ? 1f : 0.6f;
@@ -318,6 +367,7 @@ public sealed partial class DungeonScene : Scene
             _enemyAppear = 0;
             _enemyDeath = -1;
             _enemyDisplayHp = enemy.Hp;
+            _enemyTrail = enemy.Hp;
             _log.Clear();
             _battle.Begin();
             yield return Events(_battle.TakeEvents());
@@ -484,6 +534,7 @@ public sealed partial class DungeonScene : Scene
             {
                 S.Cue(Cue.LevelUp);
                 S.Controller.Led(LedColor.White);
+                _fxTop.Pillar(new Vector2(960, 640), Palette.Gold);
                 yield return new WaitPanel(PanelKind.LevelUp, up, 0.8f);
             }
         }
@@ -521,6 +572,7 @@ public sealed partial class DungeonScene : Scene
             case FloorEvent.Rest:
                 yield return Message("階段の脇に、清らかな泉が湧いている。", Cue.Heal, LedColor.Blue);
                 FloorEvents.Rest(h);
+                _fxTop.Heal(new Vector2(960, 700), 900);
                 yield return Message("泉の水を飲んだ。HP と MP がすべて回復した！", Cue.Heal, LedColor.Green);
                 break;
             case FloorEvent.Treasure:
@@ -553,6 +605,7 @@ public sealed partial class DungeonScene : Scene
                     break;
                 }
                 var item = FloorEvents.OpenTreasure(_run);
+                _fx.Twinkle(new Vector2(960, 520), 50, Palette.Gold);
                 if (h.Inventory.Add(item)) yield return Message($"宝箱から {item.Name} を手に入れた！", Cue.Unlock, LedColor.White);
                 else yield return Message($"{item.Name} が入っていたが、もう持てない…", Cue.Buzzer);
                 break;
@@ -570,7 +623,8 @@ public sealed partial class DungeonScene : Scene
                     foreach (var up in ups)
                     {
                         S.Cue(Cue.LevelUp);
-                        yield return new WaitPanel(PanelKind.LevelUp, up, 0.8f);
+                        _fxTop.Pillar(new Vector2(960, 640), Palette.Gold);
+                yield return new WaitPanel(PanelKind.LevelUp, up, 0.8f);
                     }
                 }
                 else
@@ -607,6 +661,19 @@ public sealed partial class DungeonScene : Scene
             if (_art is null) return new Vector2(960, 420);
             float h = Art.EnemyHeight(_art, EnemyScale);
             return EnemyFeet - new Vector2(0, h / 2);
+        }
+    }
+
+    private float EnemyHeightOnScreen => _art is null ? 300 : Art.EnemyHeight(_art, EnemyScale);
+
+    private Rectangle EnemyBounds
+    {
+        get
+        {
+            if (_art is null) return new Rectangle(860, 300, 200, 300);
+            float h = EnemyHeightOnScreen;
+            float w = _art.FrameWidth(false) * _art.BaseScale * EnemyScale;
+            return new Rectangle((int)(EnemyFeet.X - (w / 2)), (int)(EnemyFeet.Y - h), (int)w, (int)h);
         }
     }
 

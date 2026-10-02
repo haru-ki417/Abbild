@@ -5,6 +5,7 @@ string? snapshots = null;
 string? dataDir = null;
 bool windowed = false;
 bool autoplay = false;
+string? only = null;
 double autoSeconds = 240;
 for (int i = 0; i < args.Length; i++)
 {
@@ -15,6 +16,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--data" when i + 1 < args.Length:
             dataDir = args[++i];
+            break;
+        case "--only" when i + 1 < args.Length:
+            only = args[++i];
             break;
         case "--windowed":
             windowed = true;
@@ -32,7 +36,7 @@ for (int i = 0; i < args.Length; i++)
 
 try
 {
-    using var game = new AbbildGame(new LaunchOptions(snapshots, windowed, dataDir, autoplay, autoSeconds));
+    using var game = new AbbildGame(new LaunchOptions(snapshots, windowed, dataDir, autoplay, autoSeconds, only));
     game.Run();
 }
 catch (Exception ex)

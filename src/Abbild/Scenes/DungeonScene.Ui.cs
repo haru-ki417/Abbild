@@ -71,12 +71,12 @@ public sealed partial class DungeonScene
                         {
                             string? why = b.CannotUse(s);
                             int cost = b.MpCost(s);
-                            return new MenuItem(s.Name, why is null, cost > 0 ? $"MP {cost}" : "", why is null ? s.Description : $"{s.Description}（{why}）", s.Id);
+                            return new MenuItem(s.Name, why is null, cost > 0 ? $"MP {cost}" : "", why is null ? s.Description : $"{s.Description}（{why}）", s.Id, Icons.For(s));
                         }), keepIndex: true);
                         break;
                     case 2:
                         _pane = Pane.Items;
-                        _list.SetItems(_run.Hero.Inventory.Stacks.Select(st => new MenuItem(st.Item.Name, true, $"×{st.Count}", st.Item.Description, st.Item)), keepIndex: true);
+                        _list.SetItems(_run.Hero.Inventory.Stacks.Select(st => new MenuItem(st.Item.Name, true, $"×{st.Count}", st.Item.Description, st.Item, Icons.For(st.Item))), keepIndex: true);
                         break;
                     case 3:
                         _pane = Pane.Status;
@@ -171,15 +171,32 @@ public sealed partial class DungeonScene
         // 敵
         if (_battle is not null && _art is not null) DrawEnemy(g);
 
+        // エフェクト（ふつう → 光）
+        batch.Begin();
+        _fx.DrawNormal(g);
+        batch.End();
+        batch.Begin(blendState: BlendState.Additive);
+        _fx.DrawAdditive(g);
+        batch.End();
+
         batch.Begin();
         DrawTopBar(g);
         DrawStatus(g);
         DrawMessages(g);
         if (_wait is WaitCommand) DrawCommand(g);
         if (_wait is WaitChoice wc) DrawChoice(g, wc);
+        batch.End();
+        batch.Begin(blendState: BlendState.Additive);
+        _fxTop.DrawAdditive(g);
+        batch.End();
+        batch.Begin();
         if (_wait is WaitPanel { Kind: PanelKind.LevelUp } lp) DrawLevelUp(g, lp);
         Art.Popups(g, _popups);
-        if (_heroFlash > 0) g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), new Color(255, 0, 0) * (_heroFlash * 0.22f));
+        if (_heroFlash > 0) g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), new Color(255, 0, 0) * (_heroFlash * 0.12f));
+        if (_redVignette > 0) Art.EdgeGlow(g, new Color(200, 0, 0), _redVignette * 0.8f);
+        // HP が少ないときは、画面のふちが脈打つ
+        var hh = _run.Hero;
+        if (hh.Hp > 0 && hh.Hp <= hh.MaxHp / 4 && _battle is not null) Art.EdgeGlow(g, new Color(160, 0, 0), 0.25f + (0.15f * MathF.Sin(Time * 6)));
         batch.End();
 
         if (_wait is WaitChallenge ch) ch.View.Draw(g, Time);
@@ -205,7 +222,12 @@ public sealed partial class DungeonScene
         var art = _art!;
         float scale = EnemyScale * (0.6f + (0.4f * Ease.OutBack(_enemyAppear)));
         float alpha = Math.Min(1, _enemyAppear * 2);
-        if (_enemyDeath >= 0) alpha *= 1 - _enemyDeath;
+        if (_enemyDeath >= 0)
+        {
+            // 白く光って、縦につぶれながら消える
+            alpha *= 1 - Ease.OutCubic(_enemyDeath);
+            scale *= 1 + (_enemyDeath * 0.15f);
+        }
         var feet = EnemyFeet + new Vector2(MathF.Sin(Time * 70) * 14 * _enemyShake, 0);
         // 影
         g.Batch.Begin();
@@ -217,13 +239,14 @@ public sealed partial class DungeonScene
         g.Batch.Begin(samplerState: art.Pixel ? SamplerState.PointClamp : SamplerState.LinearClamp);
         var color = Color.White * alpha;
         bool attacking = _enemyAttackT >= 0;
-        Art.Enemy(g, art, b.Enemy.Def, feet, Time, scale, color, attacking, Math.Max(0, _enemyAttackT));
+        Art.Enemy(g, art, b.Enemy.Def, feet, _animTime, scale, color, attacking, Math.Max(0, _enemyAttackT));
         g.Batch.End();
         if (_enemyFlash > 0)
         {
             // 当たったときに白く光らせる（加算）
             g.Batch.Begin(blendState: BlendState.Additive, samplerState: art.Pixel ? SamplerState.PointClamp : SamplerState.LinearClamp);
-            Art.Enemy(g, art, b.Enemy.Def, feet, Time, scale, Color.White * (_enemyFlash * 0.8f), attacking, Math.Max(0, _enemyAttackT));
+            float flash = Math.Max(_enemyFlash * 0.8f, _enemyDeath >= 0 ? 1 - _enemyDeath : 0);
+            Art.Enemy(g, art, b.Enemy.Def, feet, _animTime, scale, Color.White * (flash * alpha * 1.5f), attacking, Math.Max(0, _enemyAttackT));
             g.Batch.End();
         }
 
@@ -231,18 +254,31 @@ public sealed partial class DungeonScene
         g.Batch.Begin();
         if (_enemyDeath < 0.5f)
         {
+            float trail = b.Enemy.MaxHp == 0 ? -1 : _enemyTrail / b.Enemy.MaxHp;
+            float ratio = _enemyDisplayHp / Math.Max(1, b.Enemy.MaxHp);
             if (b.Enemy.IsBoss)
             {
-                var r = new Rectangle(460, 120, 1000, 30);
-                g.TextCentered(b.Enemy.Name, new Vector2(r.Center.X, r.Y - 34), 44, Palette.Bad, bold: true);
-                g.Bar(r, _enemyDisplayHp / b.Enemy.MaxHp, Palette.Hp, Palette.HpDark);
+                var plate = new Rectangle(440, 96, 1040, 96);
+                g.Window(plate, 0.95f, new Color(60, 14, 20, 236), new Color(220, 70, 60));
+                var tag = new Rectangle(plate.X + 22, plate.Y + 16, 96, 34);
+                g.Rect(tag, new Color(200, 40, 40));
+                g.Outline(tag, Color.Black, 2);
+                g.TextCentered(b.Enemy.IsFinalBoss ? "LAST" : "BOSS", new Vector2(tag.Center.X, tag.Center.Y), 26, Color.White);
+                g.Text(b.Enemy.Name, new Vector2(plate.X + 136, plate.Y + 12), 38, Color.White);
+                g.TextRight($"{b.Enemy.Hp} / {b.Enemy.MaxHp}", new Vector2(plate.Right - 26, plate.Y + 18), 26, Palette.Dim);
+                g.Bar(new Rectangle(plate.X + 24, plate.Y + 62, plate.Width - 48, 18), ratio, new Color(230, 60, 60), Palette.HpDark, trail: trail);
             }
             else
             {
-                float top = Math.Max(150, EnemyFeet.Y - Art.EnemyHeight(art, EnemyScale) - 40);
+                float top = Math.Max(150, EnemyFeet.Y - Art.EnemyHeight(art, EnemyScale) - 50);
                 string name = b.EnemyDisplayName;
-                g.TextCentered(name, new Vector2(960, top - 30), 40, Color.White, bold: true);
-                if (name != "？？？") g.Bar(new Rectangle(810, (int)top + 4, 300, 16), _enemyDisplayHp / b.Enemy.MaxHp, Palette.Hp, Palette.HpDark);
+                var m = g.Measure(name, 34);
+                var plate = new Rectangle((int)(960 - Math.Max(170, (m.X / 2) + 30)), (int)top - 50, (int)Math.Max(340, m.X + 60), 82);
+                g.Rect(new Rectangle(plate.X + 4, plate.Y + 6, plate.Width, plate.Height), Color.Black * 0.35f);
+                g.Rect(plate, new Color(12, 14, 30) * 0.82f);
+                g.Outline(plate, Palette.Frame * 0.9f, 2);
+                g.TextCentered(name, new Vector2(960, plate.Y + 24), 34, Color.White);
+                if (name != "？？？") g.Bar(new Rectangle(plate.X + 20, plate.Bottom - 26, plate.Width - 40, 12), ratio, new Color(230, 70, 70), Palette.HpDark, trail: trail, ticks: false);
             }
         }
         g.Batch.End();
@@ -281,22 +317,46 @@ public sealed partial class DungeonScene
         var h = _run.Hero;
         var r = StatusRect;
         r.Offset((int)(MathF.Sin(Time * 80) * 10 * _heroPanelShake), 0);
-        g.Window(r, 0.94f, border: h.Hp <= h.MaxHp / 4 ? Palette.Bad : null);
+        bool danger = h.Hp > 0 && h.Hp <= h.MaxHp / 4;
+        g.Window(r, 0.95f, border: danger ? Color.Lerp(Palette.Frame, Palette.Bad, 0.5f + (0.5f * MathF.Sin(Time * 6))) : null);
+
+        // 顔（小さな額縁に入れる）
+        var face = new Rectangle(r.X + 20, r.Y + 22, 146, 146);
+        g.Rect(new Rectangle(face.X - 4, face.Y - 4, face.Width + 8, face.Height + 8), Color.Black);
+        g.Rect(face, new Color(30, 40, 80));
         var tex = S.Assets.Hero(h.Gender);
         var tint = Color.Lerp(Color.White, Palette.Bad, _heroFlash * 0.7f);
-        Art.HeroBust(g, tex, new Rectangle(r.X + 18, r.Y + 22, 150, 150), tint);
-        float x = r.X + 186;
-        g.Text(h.Name, new Vector2(x, r.Y + 18), 40, Color.White);
-        g.TextRight($"Lv {h.Level}", new Vector2(r.Right - 22, r.Y + 22), 34, Palette.Gold);
-        g.Text("HP", new Vector2(x, r.Y + 78), 28, Palette.Hp);
-        g.Bar(new Rectangle((int)x + 54, r.Y + 84, 300, 22), _displayHp / h.MaxHp, Palette.Hp, Palette.HpDark);
-        g.TextRight($"{h.Hp} / {h.MaxHp}", new Vector2(r.Right - 22, r.Y + 110), 28, Color.White);
-        g.Text("MP", new Vector2(x, r.Y + 146), 28, Palette.Mp);
-        g.Bar(new Rectangle((int)x + 54, r.Y + 152, 300, 16), h.MaxMp == 0 ? 0 : _displayMp / h.MaxMp, Palette.Mp, Palette.MpDark);
-        g.TextRight($"{h.Mp} / {h.MaxMp}", new Vector2(r.Right - 22, r.Y + 172), 26, Color.White);
+        Art.HeroBust(g, tex, face, tint);
+        g.Outline(new Rectangle(face.X - 4, face.Y - 4, face.Width + 8, face.Height + 8), Palette.Frame, 2);
+        // 経験値の細いゲージ
+        var expR = new Rectangle(face.X, face.Bottom + 12, face.Width, 8);
+        g.Bar(expR, h.ExpToNext == 0 ? 0 : h.Exp / (float)h.ExpToNext, new Color(240, 210, 90), new Color(80, 60, 20), ticks: false);
+        g.Text("EXP", new Vector2(face.X, expR.Bottom + 6), 22, Palette.Dim);
 
-        // 状態・蘇生の残り
-        float bx = r.X + 22;
+        float x = r.X + 188;
+        g.Text(h.Name, new Vector2(x, r.Y + 16), 40, Color.White);
+        // Lv の札
+        string lv = $"Lv {h.Level}";
+        var lvW = g.Measure(lv, 30).X + 20;
+        var lvR = new Rectangle((int)(r.Right - 20 - lvW), r.Y + 20, (int)lvW, 40);
+        g.Rect(lvR, new Color(70, 52, 18));
+        g.Outline(lvR, Palette.Frame, 2);
+        g.TextCentered(lv, new Vector2(lvR.Center.X, lvR.Center.Y), 30, Palette.Gold);
+
+        // HP（少ないほど黄 → 赤、減った分が白く残る）
+        float hpRatio = h.MaxHp == 0 ? 0 : _displayHp / h.MaxHp;
+        var hpColor = hpRatio > 0.5f ? new Color(90, 220, 110) : hpRatio > 0.25f ? new Color(240, 200, 60) : Palette.Hp;
+        Icons.Draw(g, "heart", new Vector2(x, r.Y + 76), 30);
+        var hpBar = new Rectangle((int)x + 42, r.Y + 80, 316, 22);
+        g.Bar(hpBar, hpRatio, hpColor, Palette.HpDark, trail: h.MaxHp == 0 ? -1 : _hpTrail / h.MaxHp);
+        g.TextRight($"{h.Hp} / {h.MaxHp}", new Vector2(r.Right - 22, r.Y + 108), 28, danger ? Palette.Bad : Color.White);
+
+        Icons.Draw(g, "drop", new Vector2(x, r.Y + 142), 30);
+        g.Bar(new Rectangle((int)x + 42, r.Y + 148, 316, 16), h.MaxMp == 0 ? 0 : _displayMp / h.MaxMp, Palette.Mp, Palette.MpDark);
+        g.TextRight($"{h.Mp} / {h.MaxMp}", new Vector2(r.Right - 22, r.Y + 170), 26, Color.White);
+
+        // 状態の札
+        float bx = x;
         float by = r.Y + 214;
         var badges = new List<(string, Color)>();
         if (h.Condition != Condition.Normal) badges.Add((Names.Of(h.Condition), Palette.Cursor));
@@ -304,15 +364,18 @@ public sealed partial class DungeonScene
         if (h.ChargeMultiplier > 1) badges.Add(($"ため×{h.ChargeMultiplier:0.0}", Palette.Gold));
         foreach (var (t, c) in badges)
         {
-            var w = g.Measure(t, 26).X + 20;
-            g.Rect(new Rectangle((int)bx, (int)by, (int)w, 38), c * 0.3f);
-            g.Outline(new Rectangle((int)bx, (int)by, (int)w, 38), c, 2);
-            g.Text(t, new Vector2(bx + 10, by + 4), 26, Color.White);
-            bx += w + 10;
+            var w = g.Measure(t, 24).X + 18;
+            var br = new Rectangle((int)bx, (int)by, (int)w, 34);
+            g.Rect(br, c * 0.35f);
+            g.Outline(br, c, 2);
+            g.Text(t, new Vector2(bx + 9, by + 4), 24, Color.White);
+            bx += w + 8;
         }
-        string hearts = new string('♥', Math.Min(5, h.ReviveCharges));
-        g.TextRight(hearts.Length > 0 ? $"蘇生 {hearts}" : "蘇生 なし", new Vector2(r.Right - 22, r.Y + 220), 26, hearts.Length > 0 ? Palette.Hp : Palette.Dim);
-        if (badges.Count == 0) g.Text($"EXP {h.Exp} / {h.ExpToNext}", new Vector2(r.X + 22, r.Y + 224), 24, Palette.Dim);
+        // 蘇生のチャンス（ハートのアイコンを並べる）
+        int charges = Math.Min(5, h.ReviveCharges);
+        float hx = r.Right - 22 - (charges * 30);
+        if (charges == 0) g.TextRight("蘇生 なし", new Vector2(r.Right - 22, r.Y + 228), 22, Palette.Dim);
+        for (int i = 0; i < charges; i++) Icons.Draw(g, "heart", new Vector2(hx + (i * 30), r.Y + 234), 24);
     }
 
     private void DrawMessages(Gfx g)
@@ -470,4 +533,24 @@ public sealed partial class DungeonScene
     internal bool ShowingChoice => _wait is WaitChoice;
 
     internal string PaneName => _pane.ToString();
+
+    /// <summary>演出だけを出す（見た目の確認用）。</summary>
+    internal void DebugFx(string kind)
+    {
+        float size = Math.Clamp(EnemyHeightOnScreen, 220, 520);
+        switch (kind)
+        {
+            case "slash": _fx.Slash(EnemyCenter, size, false); _enemyFlash = 1; break;
+            case "crit": _fx.Slash(EnemyCenter, size, true); _enemyFlash = 1; _shake = 0.4f; break;
+            case "fire": _fx.Element(Element.Fire, EnemyCenter, size); break;
+            case "ice": _fx.Element(Element.Ice, EnemyCenter, size); break;
+            case "thunder": _fx.Element(Element.Thunder, EnemyCenter, size); break;
+            case "poison": _fx.Element(Element.Poison, EnemyCenter, size); break;
+            case "holy": _fx.Element(Element.Holy, EnemyCenter, size); break;
+            case "shatter": _fx.Shatter(EnemyBounds, _art?.Average ?? Color.Gray, 200); _enemyDeath = 0; break;
+            case "heal": _fxTop.Heal(new Vector2(300, 930), 480); break;
+            case "pillar": _fxTop.Pillar(new Vector2(960, 640), Palette.Gold); break;
+            case "claw": _fxTop.Claw(new Vector2(960, 560), true); _redVignette = 1; _heroFlash = 1; break;
+        }
+    }
 }

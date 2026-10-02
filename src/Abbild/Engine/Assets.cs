@@ -21,6 +21,9 @@ public sealed class EnemyArt
 
     public Color Tint { get; init; } = Color.White;
 
+    /// <summary>絵の平均の色（倒れたときの粒の色）。</summary>
+    public Color Average { get; init; } = Color.Gray;
+
     public int FrameWidth(bool attack) => (attack && Attack is not null ? Attack.Width / AttackFrames : Idle.Width / IdleFrames);
 
     public int FrameHeight(bool attack) => attack && Attack is not null ? Attack.Height : Idle.Height;
@@ -62,7 +65,7 @@ public sealed class Assets(GraphicsDevice device, string contentRoot)
         {
             var t = Texture($"enemies/{s.Id}.png");
             // 一枚絵は長辺がおよそ 420px。画面ではおよそ 1.15 倍で出す
-            return new EnemyArt { Idle = t, BaseScale = 1.15f * s.Scale, Tint = tint };
+            return new EnemyArt { Idle = t, BaseScale = 1.15f * s.Scale, Tint = tint, Average = Mul(AverageOf(t), tint) };
         }
         string idle = $"{s.Id}_idle";
         string atk = $"{s.Id}_attack";
@@ -80,8 +83,32 @@ public sealed class Assets(GraphicsDevice device, string contentRoot)
             Pixel = true,
             BaseScale = scale,
             Tint = tint,
+            Average = Mul(AverageOf(idleTex), tint),
         };
     }
+
+    private readonly Dictionary<Texture2D, Color> _avg = [];
+
+    private Color AverageOf(Texture2D t)
+    {
+        if (_avg.TryGetValue(t, out var c)) return c;
+        var data = new Color[t.Width * t.Height];
+        t.GetData(data);
+        long r = 0, g = 0, b = 0, n = 0;
+        for (int i = 0; i < data.Length; i += 3)
+        {
+            var p = data[i];
+            if (p.A < 200) continue;
+            r += p.R; g += p.G; b += p.B; n++;
+        }
+        c = n == 0 ? Color.Gray : new Color((int)(r / n), (int)(g / n), (int)(b / n));
+        // 少し明るく、鮮やかに
+        c = Color.Lerp(c, Color.White, 0.15f);
+        _avg[t] = c;
+        return c;
+    }
+
+    private static Color Mul(Color a, Color b) => new(a.ToVector3() * b.ToVector3());
 
     /// <summary>起動時に、よく使う画像を先に読み込んでおく（最初の戦闘で引っかからないように）。</summary>
     public void Warm()

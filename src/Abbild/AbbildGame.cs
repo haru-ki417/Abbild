@@ -8,7 +8,7 @@ using Microsoft.Xna.Framework.Graphics;
 
 namespace Abbild;
 
-public sealed record LaunchOptions(string? SnapshotDir, bool Windowed, string? DataDir, bool AutoPlay, double AutoPlaySeconds);
+public sealed record LaunchOptions(string? SnapshotDir, bool Windowed, string? DataDir, bool AutoPlay, double AutoPlaySeconds, string? Only = null);
 
 public sealed class AbbildGame : Game
 {

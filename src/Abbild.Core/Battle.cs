@@ -21,7 +21,8 @@ public sealed record BattleEvent(
     Cue Cue = Cue.None,
     LedColor Led = LedColor.None,
     OledAnim Oled = OledAnim.None,
-    bool Critical = false);
+    bool Critical = false,
+    Element Element = Element.None);
 
 public enum BattleOutcome
 {
@@ -804,7 +805,7 @@ public sealed class BattleSession
     {
         int dealt = Enemy.TakeDamage(Math.Min(damage, 9999));
         double aff = Affinity(element);
-        Emit(new BattleEvent(BattleEventKind.EnemyDamaged, $"{Enemy.Name} に {dealt} のダメージ！", dealt, crit ? Cue.Critical : Cue.Hit, Critical: crit));
+        Emit(new BattleEvent(BattleEventKind.EnemyDamaged, $"{Enemy.Name} に {dealt} のダメージ！", dealt, crit ? Cue.Critical : Cue.Hit, Critical: crit, Element: element));
         if (aff > 1) Say("効果は ばつぐんだ！");
         else if (aff < 1) Say("あまり効いていないようだ…");
         if (Enemy.IsDead)
