@@ -18,6 +18,13 @@ public sealed class Menu
     public int VisibleRows { get; set; } = 10;
     public bool Wrap { get; set; } = true;
 
+    /// <summary>出てからの時間（秒）。項目が上から順にすべり込む。大きな値なら全部出ている。</summary>
+    public float Reveal { get; set; } = 99;
+
+    // 選択の帯は、行から行へなめらかに動く
+    private float _bandRow = -1;
+    private float _lastTime;
+
     /// <summary>左右キーで値を変える項目（設定画面用）。</summary>
     public Action<int, int>? OnAdjust { get; set; }
 
@@ -103,45 +110,58 @@ public sealed class Menu
 
     public void Draw(Gfx g, Rectangle area, float time, bool active = true)
     {
-        for (int row = 0; row < Math.Min(VisibleRows, _items.Count - _scroll); row++)
+        float dt = Math.Clamp(time - _lastTime, 0, 0.1f);
+        _lastTime = time;
+        float target = Index - _scroll;
+        if (_bandRow < 0 || MathF.Abs(_bandRow - target) > VisibleRows) _bandRow = target;
+        _bandRow += (target - _bandRow) * Math.Min(1, dt * 20);
+
+        int shown = Math.Min(VisibleRows, _items.Count - _scroll);
+        // 選択の帯（文字より先に、なめらかな位置に描く）
+        if (active && Index >= _scroll && Index < _scroll + shown && RowK(Index - _scroll) > 0.5f)
+        {
+            float pulse = 0.85f + (0.15f * MathF.Sin(time * 6));
+            var r = new Rectangle(area.X, (int)(area.Y + (_bandRow * RowHeight)), area.Width, (int)RowHeight);
+            var band = new Rectangle(r.X, r.Y + 4, r.Width, r.Height - 8);
+            const int steps = 12;
+            for (int k = 0; k < steps; k++)
+            {
+                int x0 = band.X + (band.Width * k / steps);
+                int x1 = band.X + (band.Width * (k + 1) / steps);
+                g.Rect(new Rectangle(x0, band.Y, x1 - x0, band.Height), Palette.Gold * (0.32f * (1 - (k / (float)steps)) * pulse));
+            }
+            g.Rect(new Rectangle(band.X, band.Y, 4, band.Height), Palette.Gold * pulse);
+            DrawCursor(g, new Vector2(r.X + 20, r.Center.Y), time);
+        }
+        for (int row = 0; row < shown; row++)
         {
             int i = row + _scroll;
             var it = _items[i];
             var r = RowRect(area, row);
+            float rk = RowK(row);
+            if (rk <= 0) continue;
+            r.Offset((int)((1 - Ease.OutCubic(rk)) * 40), 0);
             bool sel = i == Index && active;
-            if (sel)
-            {
-                // 選んでいる行：左から右へ薄くなる金の帯＋左の縦線
-                float pulse = 0.85f + (0.15f * MathF.Sin(time * 6));
-                var band = new Rectangle(r.X, r.Y + 4, r.Width, r.Height - 8);
-                const int steps = 12;
-                for (int k = 0; k < steps; k++)
-                {
-                    int x0 = band.X + (band.Width * k / steps);
-                    int x1 = band.X + (band.Width * (k + 1) / steps);
-                    g.Rect(new Rectangle(x0, band.Y, x1 - x0, band.Height), Palette.Gold * (0.32f * (1 - (k / (float)steps)) * pulse));
-                }
-                g.Rect(new Rectangle(band.X, band.Y, 4, band.Height), Palette.Gold * pulse);
-                DrawCursor(g, new Vector2(r.X + 20, r.Center.Y), time);
-            }
-            var color = !it.Enabled ? Palette.Disabled : sel ? Color.White : Palette.Text * 0.92f;
+            var color = (!it.Enabled ? Palette.Disabled : sel ? Color.White : Palette.Text * 0.92f) * rk;
             float ty = r.Y + ((r.Height - FontSize) / 2) - 2;
             float lx = r.X + 44;
             if (it.Icon is not null)
             {
                 float isz = Math.Min(40, r.Height - 14);
-                Icons.Draw(g, it.Icon, new Vector2(lx, r.Center.Y - (isz / 2)), isz, it.Enabled ? 1f : 0.4f);
+                Icons.Draw(g, it.Icon, new Vector2(lx, r.Center.Y - (isz / 2)), isz, (it.Enabled ? 1f : 0.4f) * rk);
                 lx += isz + 12;
             }
             g.Text(it.Label, new Vector2(lx, ty), FontSize, color);
             if (!string.IsNullOrEmpty(it.Right))
             {
-                g.TextRight(it.Right, new Vector2(r.Right - 16, ty), FontSize, it.Enabled ? (sel ? Palette.Gold : Palette.Dim) : Palette.Disabled);
+                g.TextRight(it.Right, new Vector2(r.Right - 16, ty), FontSize, (it.Enabled ? (sel ? Palette.Gold : Palette.Dim) : Palette.Disabled) * rk);
             }
         }
         if (_scroll > 0) g.TextCentered("▲", new Vector2(area.Center.X, area.Y - 14), 24, Palette.Dim);
         if (_scroll + VisibleRows < _items.Count) g.TextCentered("▼", new Vector2(area.Center.X, area.Y + (VisibleRows * RowHeight) + 10), 24, Palette.Dim);
     }
+
+    private float RowK(int row) => Math.Clamp((Reveal - (row * 0.05f)) / 0.22f, 0, 1);
 
     public static void DrawCursor(Gfx g, Vector2 at, float time)
     {
@@ -166,6 +186,9 @@ public sealed class Typewriter
     public bool Done => _shown >= _text.Length;
 
     public string Visible => _text[..Math.Min(_text.Length, (int)_shown)];
+
+    /// <summary>出ている文字数（小数。最後の文字をふわっと出すのに使う）。</summary>
+    public float Shown => _shown;
 
     public void Set(string text)
     {

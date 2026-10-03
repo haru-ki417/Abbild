@@ -12,6 +12,8 @@ public sealed class StoryScene(Services s, IReadOnlyList<string> lines, string? 
     private int _index;
     private float _lineTime;
     private bool _leaving;
+    private readonly Fx _fx = new();
+    private float _dust;
 
     public static readonly string[] Prologue =
     [
@@ -42,6 +44,14 @@ public sealed class StoryScene(Services s, IReadOnlyList<string> lines, string? 
 
     protected override void Update(float dt)
     {
+        _fx.Update(dt);
+        _dust += dt;
+        var r = new Random((int)(Time * 1000));
+        while (_dust > 0.12f)
+        {
+            _dust -= 0.12f;
+            _fx.Add(new Particle { Pos = new Vector2(r.Next(0, Gfx.Width), r.Next(0, Gfx.Height)), Vel = new Vector2(r.Next(-12, 12), r.Next(-14, -4)), Life = 6, Size = r.Next(4, 8), EndSize = 4, Color = new Color(255, 230, 180) * 0.5f, EndColor = new Color(255, 200, 140) * 0f, Shape = ParticleShape.Pixel, Additive = true });
+        }
         if (_leaving) return;
         _lineTime += dt;
         _tw.Update(dt, S.TextCps * 0.6f);
@@ -85,14 +95,37 @@ public sealed class StoryScene(Services s, IReadOnlyList<string> lines, string? 
             float k = Math.Min(1, Time / 2f);
             Art.Cover(g, S.Assets.Background(background), 1.06f - (Time * 0.002f), default, Color.White * (0.22f * k));
         }
-        float alpha = Math.Min(1, _lineTime / 0.5f);
-        var lines2 = g.Wrap(_tw.Visible, 44, 1400);
+        g.Batch.End();
+        g.Batch.Begin(blendState: Microsoft.Xna.Framework.Graphics.BlendState.Additive);
+        _fx.DrawAdditive(g);
+        g.Batch.End();
+        g.Batch.Begin();
+        // 映画のような上下の黒い帯
+        float bar = 110 * Ease.OutCubic(Time / 0.8f);
+        g.Rect(new Rectangle(0, 0, Gfx.Width, (int)bar), Color.Black);
+        g.Rect(new Rectangle(0, Gfx.Height - (int)bar, Gfx.Width, (int)bar), Color.Black);
+
+        // 文章：行全体の幅で中央にそろえ、1 文字ずつ下からふわっと出す
+        var lines2 = g.Wrap(_tw.Text, 44, 1400);
         float total = lines2.Count * 44 * 1.6f;
         float y = (Gfx.Height / 2f) - (total / 2);
+        float shown = _tw.Shown;
+        int index = 0;
         foreach (var l in lines2)
         {
             var m = g.Measure(l, 44);
-            g.Text(l, new Vector2((Gfx.Width - m.X) / 2, y), 44, new Color(232, 232, 240) * alpha);
+            float x = (Gfx.Width - m.X) / 2;
+            foreach (char ch in l)
+            {
+                // 改行の文字は折り返しで消えるので、数えるときに飛ばす
+                while (index < _tw.Text.Length && _tw.Text[index] == '\n') index++;
+                float a = Math.Clamp((shown - index) / 3f, 0, 1);
+                string cs = ch.ToString();
+                float w = g.Measure(cs, 44).X;
+                if (a > 0) g.Text(cs, new Vector2(x, y + ((1 - a) * 10)), 44, new Color(232, 232, 240) * a);
+                x += w;
+                index++;
+            }
             y += 44 * 1.6f;
         }
         if (_tw.Done)
@@ -100,7 +133,13 @@ public sealed class StoryScene(Services s, IReadOnlyList<string> lines, string? 
             float blink = 0.5f + (0.5f * MathF.Sin(Time * 5));
             g.TextCentered("▼", new Vector2(Gfx.Width / 2f, (Gfx.Height / 2f) + (total / 2) + 50), 32, Palette.Gold * blink);
         }
-        g.Text($"{_index + 1} / {lines.Count}", new Vector2(40, Gfx.Height - 56), 26, Palette.Dim);
+        // 何枚目か（小さなひし形を並べる）
+        for (int i = 0; i < lines.Count; i++)
+        {
+            var p = new Vector2(60 + (i * 28), Gfx.Height - 40);
+            var c = i < _index ? Palette.Frame : i == _index ? Palette.Gold : Palette.Disabled * 0.6f;
+            g.Batch.Draw(g.Pixel, p, null, c, MathF.PI / 4, new Vector2(0.5f, 0.5f), i == _index ? 12 : 8, Microsoft.Xna.Framework.Graphics.SpriteEffects.None, 0);
+        }
         Hints.Draw(g, In, Hints.Confirm(In, "すすむ"), (In.MenuLabel, "とばす"));
         g.Batch.End();
     }

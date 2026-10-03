@@ -44,9 +44,34 @@ public sealed class TitleScene(Services s) : Scene(s)
 
     private static Rectangle ConfirmArea => new(Gfx.Width / 2 - 300, 640, 600, 128);
 
+    /// <summary>出てからの演出の時間。決定ボタンで最後まで飛ばせる。</summary>
+    private float _intro;
+    private int _landed;
+
+    private const float MenuAt = 1.35f;
+
     protected override void Update(float dt)
     {
         UpdateFx(dt);
+        float before = _intro;
+        _intro += dt;
+        if (before < MenuAt && (In.Pressed(Act.Confirm) || In.MouseClicked))
+        {
+            _intro = MenuAt + 0.4f;
+            return;
+        }
+        // ロゴの文字が着地するたびに、火花と小さな揺れ
+        while (_landed < Logo.LetterCount && _intro >= Logo.LandTime(_landed))
+        {
+            if (before < Logo.LandTime(_landed))
+            {
+                var foot = Logo.LetterFoot(_landed, LogoPos);
+                _fx.Sparks(foot, 14, new Color(255, 220, 140), 380);
+                _fx.Add(new Particle { Pos = foot, Size = 20, EndSize = 120, Life = 0.4f, Color = new Color(255, 230, 160) * 0.6f, EndColor = new Color(255, 230, 160) * 0f, Shape = ParticleShape.Ring, Additive = true });
+                S.Cue(Cue.Tick, 0.5f);
+            }
+            _landed++;
+        }
         if (_asking)
         {
             int c = _confirm.Update(S, ConfirmArea);
@@ -56,7 +81,7 @@ public sealed class TitleScene(Services s) : Scene(s)
             return;
         }
         // メニューが見えるまでは選べない（前の画面の連打で選んでしまわないように）
-        if (Ease.OutCubic(Time / 1.4f) <= 0.6f) return;
+        if (_intro < MenuAt) return;
         int i = _menu.Update(S, MenuArea);
         switch (i)
         {
@@ -141,20 +166,31 @@ public sealed class TitleScene(Services s) : Scene(s)
         b.End();
 
         b.Begin(blendState: Microsoft.Xna.Framework.Graphics.BlendState.Additive);
+        // 天井のすき間から差しこむ光の筋（ゆっくり揺れる）
+        var top = new Vector2(Gfx.Width / 2f, -160);
+        for (int i = 0; i < 7; i++)
+        {
+            float ang = (MathF.PI / 2) + ((i - 3) * 0.16f) + (MathF.Sin((Time * 0.25f) + (i * 1.7f)) * 0.04f);
+            var dir = new Vector2(MathF.Cos(ang), MathF.Sin(ang));
+            float flick = 0.75f + (0.25f * MathF.Sin((Time * 0.7f) + (i * 2.3f)));
+            g.Batch.Draw(g.GlowTex, top + (dir * 620), null, new Color(255, 220, 160) * (0.07f * flick), ang, new Vector2(64, 64), new Vector2(10f, 0.55f + (0.15f * (i % 2))), Microsoft.Xna.Framework.Graphics.SpriteEffects.None, 0);
+        }
         _fx.DrawAdditive(g);
         b.End();
 
         b.Begin();
-        // ロゴ
-        var logoPos = new Vector2(Gfx.Width / 2f, 220 - ((1 - appear) * 40));
-        g.Glow(logoPos, 600, new Color(255, 180, 60) * (0.16f * appear));
-        Logo.Draw(g, logoPos, Time, appear);
+        // ロゴ（1 文字ずつ落ちてくる）
+        var logoPos = LogoPos;
+        g.Glow(logoPos, 600, new Color(255, 180, 60) * (0.16f * Ease.Span(_intro, 0.6f, 1.4f)));
+        Logo.Draw(g, logoPos, Time, 1f, 1f, _intro);
         // サブタイトル（両側に飾りの線）
         string sub = "古の迷宮と勇者の魂";
         var sm = g.Measure(sub, 40);
         float sy = 368;
-        g.TextCentered(sub, new Vector2(Gfx.Width / 2f, sy), 40, new Color(240, 230, 210) * appear, bold: true);
-        float lw = 180;
+        float subK = Ease.Span(_intro, 0.9f, 1.3f);
+        g.TextCentered(sub, new Vector2(Gfx.Width / 2f, sy), 40, new Color(240, 230, 210) * subK, bold: true);
+        appear = subK;
+        float lw = 180 * Ease.OutCubic(subK);
         float lx0 = (Gfx.Width / 2f) - (sm.X / 2) - 30;
         float lx1 = (Gfx.Width / 2f) + (sm.X / 2) + 30;
         g.Rect(lx0 - lw, sy - 2, lw, 3, Palette.Frame * appear);
@@ -172,8 +208,14 @@ public sealed class TitleScene(Services s) : Scene(s)
         else
         {
             var mr = MenuArea;
-            g.Window(new Rectangle(mr.X - 30, mr.Y - 24, mr.Width + 60, mr.Height + 48), 0.9f * appear);
-            if (appear > 0.6f) _menu.Draw(g, mr, Time);
+            var wr = new Rectangle(mr.X - 30, mr.Y - 24, mr.Width + 60, mr.Height + 48);
+            float open = Ease.Span(_intro, MenuAt - 0.25f, MenuAt);
+            if (open > 0)
+            {
+                g.Window(open < 1 ? Gfx.Opening(wr, open) : wr, 0.9f);
+                _menu.Reveal = _intro - MenuAt;
+                if (open >= 1) _menu.Draw(g, mr, Time);
+            }
         }
 
         // 下の情報（勇者の足元に重なっても読めるよう、下に暗い帯を敷く）
@@ -194,6 +236,8 @@ public sealed class TitleScene(Services s) : Scene(s)
         g.TextRight("ver 1.1.0  © 2026 Haruki Takahashi", new Vector2(Gfx.Width - 40, Gfx.Height - 56), 26, Palette.Dim);
         b.End();
     }
+
+    private static Vector2 LogoPos => new(Gfx.Width / 2f, 220);
 
     private void DrawHero(Gfx g, Gender gender, Vector2 feet, float appear, bool flip)
     {

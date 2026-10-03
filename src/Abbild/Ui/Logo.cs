@@ -13,6 +13,24 @@ public static class Logo
 {
     private static Texture2D? _logo;
     private static Texture2D? _mask;
+    private static readonly List<Rectangle> _letters = [];
+
+    /// <summary>文字の数。</summary>
+    public static int LetterCount => _letters.Count;
+
+    /// <summary>i 文字目が着地する時刻（intro の秒）。最初に地面に当たる瞬間。</summary>
+    public static float LandTime(int i) => LetterStart(i) + (0.5f * 0.3636f);
+
+    private static float LetterStart(int i) => 0.15f + (i * 0.09f);
+
+    /// <summary>i 文字目の、着地したときの足もと（画面の座標）。</summary>
+    public static Vector2 LetterFoot(int i, Vector2 center, float scale = 1f)
+    {
+        if (_logo is null || i < 0 || i >= _letters.Count) return center;
+        var r = _letters[i];
+        float x = center.X + ((r.Center.X - (_logo.Width / 2f)) * scale);
+        return new Vector2(x, center.Y + (_logo.Height * 0.32f * scale));
+    }
     private static readonly RasterizerState Clip = new() { ScissorTestEnable = true, CullMode = CullMode.None };
 
     public static (Texture2D Logo, Texture2D Mask) Get(Gfx g, string text = "Abbild", float size = 208)
@@ -68,13 +86,24 @@ public static class Logo
 
         var a = new float[w * h];
         int ox = pad;
+        var placed = new List<(int From, int To)>();
         foreach (var sp in spans)
         {
+            int start = ox;
             for (int x = sp.From; x <= sp.To; x++, ox++)
             {
                 for (int y = 0; y < h; y++) a[(y * w) + ox] = raw[(y * rw) + x].A / 255f;
             }
+            placed.Add((start, ox - 1));
             ox += gap;
+        }
+        // 1 文字ずつ動かすための区切り（文字と文字のあいだの真ん中で切る）
+        _letters.Clear();
+        for (int i = 0; i < placed.Count; i++)
+        {
+            int l = i == 0 ? 0 : (placed[i - 1].To + placed[i].From) / 2;
+            int r = i == placed.Count - 1 ? w : (placed[i].To + placed[i + 1].From) / 2;
+            _letters.Add(new Rectangle(l, 0, r - l, h));
         }
         int top = h, bottom = 0;
         for (int i = 0; i < a.Length; i++)
@@ -151,18 +180,33 @@ public static class Logo
         return (_logo, _mask);
     }
 
-    /// <summary>ロゴを描く（影・本体・ときどき光が走る）。center は中心。</summary>
-    public static void Draw(Gfx g, Vector2 center, float time, float alpha, float scale = 1f)
+    /// <summary>
+    /// ロゴを描く（影・本体・ときどき光が走る）。center は中心。
+    /// intro は出てからの秒数：1 文字ずつ上から落ちて弾み、そろったら光が走る。
+    /// </summary>
+    public static void Draw(Gfx g, Vector2 center, float time, float alpha, float scale = 1f, float intro = 99f)
     {
         var (logo, mask) = Get(g);
         var origin = new Vector2(logo.Width / 2f, logo.Height / 2f);
-        g.Batch.Draw(logo, center + new Vector2(10, 14), null, Color.Black * (0.55f * alpha), 0, origin, scale, SpriteEffects.None, 0);
-        g.Batch.Draw(logo, center, null, Color.White * alpha, 0, origin, scale, SpriteEffects.None, 0);
+        var topLeft = center - (origin * scale);
+        for (int i = 0; i < _letters.Count; i++)
+        {
+            var src = _letters[i];
+            float k = Ease.Span(intro, LetterStart(i), LetterStart(i) + 0.5f);
+            if (k <= 0) continue;
+            float drop = (1 - Ease.OutBounce(k)) * 300;
+            // そろったあとは、文字がゆっくり波打つ
+            float wave = MathF.Sin((time * 2.2f) - (i * 0.7f)) * 3 * Ease.Span(intro, 1.6f, 2.2f);
+            var pos = topLeft + (new Vector2(src.X, -drop + wave) * scale);
+            float la = alpha * Math.Min(1, k * 4);
+            g.Batch.Draw(logo, pos + new Vector2(10, 14 + (drop * 0.3f)), src, Color.Black * (0.55f * la * (1 - (drop / 300f))), 0, Vector2.Zero, scale, SpriteEffects.None, 0);
+            g.Batch.Draw(logo, pos, src, Color.White * la, 0, Vector2.Zero, scale, SpriteEffects.None, 0);
+        }
         g.Batch.End();
 
-        // 光の帯が左から右へ走る（4 秒ごと）
+        // 光の帯が左から右へ走る（4 秒ごと。文字がそろってから）
         float cycle = time % 4f;
-        if (cycle < 1.1f)
+        if (cycle < 1.1f && intro > 1.6f)
         {
             float k = cycle / 1.1f;
             int bandW = 90;

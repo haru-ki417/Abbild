@@ -100,7 +100,40 @@ public sealed class Gfx(GraphicsDevice device, FontSystem fonts)
         return t;
     }
 
-    public SpriteFontBase Font(float size) => fonts.GetFont(size);
+    /// <summary>文字の大きさは整数にそろえる（大きさが毎フレーム変わっても、文字の画像が増え続けないように）。</summary>
+    public SpriteFontBase Font(float size) => fonts.GetFont(MathF.Max(1, MathF.Round(size)));
+
+    /// <summary>
+    /// 動かす文字：大きさは決まった値で作り、拡大・回転は描くときにかける（拡大縮小のアニメーション用）。
+    /// center を中心に描く。stroke で黒い縁取り。
+    /// </summary>
+    public void TextFx(string text, Vector2 center, float size, Color color, float scale = 1f, float rotation = 0f, bool stroke = true)
+    {
+        if (scale <= 0.01f || color.A == 0) return;
+        var f = Font(size);
+        var m = f.MeasureString(text);
+        var origin = m / 2;
+        var sc = new Vector2(scale, scale);
+        float a = color.A / 255f;
+        if (stroke)
+        {
+            Batch.DrawString(f, text, center, Color.Black * a, rotation, origin, sc, 0, 0, 0, TextStyle.None, FontSystemEffect.Stroked, Math.Max(2, (int)(size / 18)));
+        }
+        else
+        {
+            Batch.DrawString(f, text, center + new Vector2(0, Math.Max(2, size / 16) * scale), Color.Black * (a * 0.7f), rotation, origin, sc);
+        }
+        Batch.DrawString(f, text, center, color, rotation, origin, sc);
+    }
+
+    /// <summary>窓が開くときの形（中央の横線から上下に開く）。k は 0〜1。</summary>
+    public static Rectangle Opening(Rectangle r, float k)
+    {
+        float e = Abbild.Engine.Ease.OutBack(Math.Clamp(k, 0, 1));
+        int h = Math.Max(6, (int)(r.Height * e));
+        int w = (int)(r.Width * (0.9f + (0.1f * Math.Clamp(k * 2, 0, 1))));
+        return new Rectangle(r.Center.X - (w / 2), r.Center.Y - (h / 2), w, h);
+    }
 
 
     // ---- 図形 ----

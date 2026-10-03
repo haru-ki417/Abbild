@@ -48,6 +48,11 @@ public sealed partial class DungeonScene : Scene
                 _t = 0;
                 var e = events[_i];
                 _hold = d.Begin(e);
+                // 「〜の攻撃！」のすぐあとに当たるときは、待たずにテンポよく
+                if (e.Kind == BattleEventKind.Message && _i + 1 < events.Count && events[_i + 1].Kind is BattleEventKind.EnemyDamaged or BattleEventKind.EnemyAttack)
+                {
+                    _hold = Math.Min(_hold, 0.32f);
+                }
             }
             return false;
         }
@@ -88,6 +93,9 @@ public sealed partial class DungeonScene : Scene
         public Menu Menu { get; } = MakeMenu(options);
         public int Result { get; private set; } = -1;
 
+        /// <summary>出てからの時間（開く演出）。</summary>
+        public float T { get; set; }
+
         private static Menu MakeMenu(string[] options)
         {
             var m = new Menu { RowHeight = 66, FontSize = 40 };
@@ -97,6 +105,7 @@ public sealed partial class DungeonScene : Scene
 
         public override bool Update(DungeonScene d, float dt)
         {
+            T += dt;
             Result = Menu.Update(d.S, ChoiceRect(Menu.Items.Count));
             return Result >= 0;
         }
@@ -118,7 +127,28 @@ public sealed partial class DungeonScene : Scene
         }
     }
 
-    private enum PanelKind { LevelUp, FloorIntro }
+    private enum PanelKind { LevelUp, FloorIntro, Warning, Victory }
+
+    private enum ActionStyle { Dash, CutIn, Item }
+
+    /// <summary>こちらの行動の演出（攻撃の突進・スキルのカットイン・道具を投げる）。</summary>
+    private sealed class WaitAction(ActionStyle style, string label, Element element, string? icon) : Wait
+    {
+        private float _t;
+        public ActionStyle Style { get; } = style;
+        public string Label { get; } = label;
+        public Element Element { get; } = element;
+        public string? Icon { get; } = icon;
+        public float T => _t;
+
+        public float Duration => Style switch { ActionStyle.CutIn => 0.8f, ActionStyle.Item => 0.45f, _ => 0.28f };
+
+        public override bool Update(DungeonScene d, float dt)
+        {
+            _t += dt;
+            return _t >= Duration || (Style == ActionStyle.CutIn && _t > 0.3f && d.In.Pressed(Act.Confirm));
+        }
+    }
 
     // ---- 状態 ----
     private readonly RunState _run;
@@ -154,6 +184,18 @@ public sealed partial class DungeonScene : Scene
     private float _hpTrail;
     private float _enemyTrail;
     private float _enemyDisplayHp;
+
+    /// <summary>敵が現れてからの時間（登場の演出）。</summary>
+    private float _encounter = 99;
+
+    /// <summary>当たってのけぞる強さ（1 → 0）。</summary>
+    private float _enemyKnock;
+    private float _cmdT;
+
+    /// <summary>攻撃の突進の演出の時間（文章と並行して進む）。</summary>
+    private float _dashT = 99;
+    private float _paneT;
+    private int _lastPane = -1;
 
     public DungeonScene(Services s, RunState run, bool fromSave) : base(s)
     {
@@ -228,6 +270,22 @@ public sealed partial class DungeonScene : Scene
         if (_enemyAttackT >= 0) { _enemyAttackT += adt * 2.2f; if (_enemyAttackT > 1) _enemyAttackT = -1; }
         if (_enemyDeath >= 0) _enemyDeath = Math.Min(1, _enemyDeath + (adt * 2.2f));
         _enemyAppear = Math.Min(1, _enemyAppear + (dt * 1.6f));
+        _dashT += dt;
+        float prevEnc = _encounter;
+        _encounter += dt;
+        if (prevEnc < 0.45f && _encounter >= 0.45f && _battle is not null) _enemyFlash = Math.Max(_enemyFlash, 0.9f);
+        _enemyKnock = Math.Max(0, _enemyKnock - (adt * 3.2f));
+        if (_wait is WaitCommand)
+        {
+            _cmdT += dt;
+            if ((int)_pane != _lastPane) { _lastPane = (int)_pane; _paneT = 0; }
+            _paneT += dt;
+        }
+        else
+        {
+            _cmdT = 0;
+            _lastPane = -1;
+        }
         var h = _run.Hero;
         _displayHp += (h.Hp - _displayHp) * Math.Min(1, dt * 6);
         // 減った分の白いあとは、少し遅れてから追いかける
@@ -265,12 +323,13 @@ public sealed partial class DungeonScene : Scene
             case BattleEventKind.EnemyDamaged:
             {
                 _enemyFlash = 1;
-                _enemyShake = e.Critical ? 1.4f : 1;
+                _enemyShake = e.Critical ? 0.6f : 0.35f;
+                _enemyKnock = e.Critical ? 1.4f : 1f;
                 float size = Math.Clamp(EnemyHeightOnScreen, 220, 520);
                 if (e.Element == Element.None) _fx.Slash(EnemyCenter, size, e.Critical);
                 else _fx.Element(e.Element, EnemyCenter, size);
                 _hitStop = e.Critical ? 0.14f : 0.07f;
-                _popups.Add(new Art.Popup { Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = EnemyCenter + new Vector2(0, -40), Color = e.Critical ? Palette.Gold : Color.White, Size = e.Critical ? 104 : 80 });
+                _popups.Add(new Art.Popup { Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = EnemyCenter + new Vector2(0, -40), Color = e.Critical ? Palette.Gold : Color.White, Size = e.Critical ? 104 : 80, Kind = e.Critical ? Art.PopupKind.Critical : Art.PopupKind.Damage });
                 if (e.Critical) _shake = Math.Max(_shake, 0.4f);
                 if (_battle?.Enemy.IsDead == true)
                 {
@@ -289,20 +348,20 @@ public sealed partial class DungeonScene : Scene
                     _redVignette = Math.Min(1, 0.5f + (e.Amount / (float)Math.Max(1, _run.Hero.MaxHp)));
                     _fxTop.Sparks(new Vector2(300, 860), 14, new Color(255, 80, 60), 500);
                     _fxTop.Claw(new Vector2(960, 560), e.Cue == Cue.BigDamage);
-                    _popups.Add(new Art.Popup { Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = new Vector2(300, 790), Color = Palette.Bad, Size = 70 });
+                    _popups.Add(new Art.Popup { Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = new Vector2(330, 728), Color = Palette.Bad, Size = 70, Kind = Art.PopupKind.HeroDamage });
                 }
                 hold = string.IsNullOrEmpty(e.Text) ? 0.25f : 0.7f;
                 break;
             case BattleEventKind.HeroHealed:
                 if (e.Amount > 0)
                 {
-                    _popups.Add(new Art.Popup { Text = "+" + e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = new Vector2(300, 790), Color = Palette.Good, Size = 64 });
+                    _popups.Add(new Art.Popup { Text = "+" + e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = new Vector2(330, 728), Color = Palette.Good, Size = 64, Kind = Art.PopupKind.Heal });
                     _fxTop.Heal(new Vector2(300, 930), 480);
                 }
                 hold = 0.25f;
                 break;
             case BattleEventKind.EnemyHealed:
-                _popups.Add(new Art.Popup { Text = "+" + e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = EnemyCenter, Color = Palette.Good, Size = 64 });
+                _popups.Add(new Art.Popup { Text = "+" + e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), Pos = EnemyCenter, Color = Palette.Good, Size = 64, Kind = Art.PopupKind.Heal });
                 _fx.Heal(EnemyFeet, 320);
                 break;
             case BattleEventKind.EnemyAttack:
@@ -314,7 +373,7 @@ public sealed partial class DungeonScene : Scene
                 hold = 0.05f;
                 break;
             case BattleEventKind.Dodge:
-                _popups.Add(new Art.Popup { Text = "MISS", Pos = new Vector2(300, 790), Color = Palette.Cursor, Size = 56 });
+                _popups.Add(new Art.Popup { Text = "MISS", Pos = new Vector2(330, 728), Color = Palette.Cursor, Size = 56, Kind = Art.PopupKind.Miss });
                 break;
         }
         if (!string.IsNullOrEmpty(e.Text)) Say(e.Text);
@@ -366,12 +425,20 @@ public sealed partial class DungeonScene : Scene
             }
             yield return new WaitPanel(PanelKind.FloorIntro, _run.Floor, 0.5f, EnemyFactory.IsBossFloor(_run.Floor) ? 2.8f : 1.9f);
 
-            // 敵が現れる
+            // 敵が現れる（ボスの階は、その前に警告）
+            if (EnemyFactory.IsBossFloor(_run.Floor))
+            {
+                S.Cue(Cue.Alarm);
+                S.Controller.Led(LedColor.Red);
+                yield return new WaitPanel(PanelKind.Warning, _run.Floor, 0.6f, 2.0f);
+            }
             var def = EnemyFactory.Choose(_run.Rng, _run.Floor, _run.Day);
             var enemy = EnemyFactory.Create(def, _run.Floor, _run.Difficulty);
             _battle = new BattleSession(_run, enemy);
             _art = S.Assets.Enemy(def.Sprite);
             _enemyAppear = 0;
+            _encounter = 0;
+            _enemyKnock = 0;
             _enemyDeath = -1;
             _enemyDisplayHp = enemy.Hp;
             _enemyTrail = enemy.Hp;
@@ -426,10 +493,12 @@ public sealed partial class DungeonScene : Scene
                         {
                             var ch = Challenge(ChallengeKind.Rage);
                             yield return ch;
+                            _dashT = 0;
                             b.Attack(ch.View.Outcome);
                         }
                         else
                         {
+                            _dashT = 0;
                             b.Attack();
                         }
                         used = true;
@@ -445,6 +514,7 @@ public sealed partial class DungeonScene : Scene
                             if (ch.View.Cancelled) continue;
                             o = ch.View.Outcome;
                         }
+                        if (b.CannotUse(sk) is null) yield return new WaitAction(ActionStyle.CutIn, sk.Name, sk.Element, Icons.For(sk));
                         used = b.UseSkill(c.Skill, o);
                         break;
                     }
@@ -458,6 +528,7 @@ public sealed partial class DungeonScene : Scene
                             if (ch.View.Cancelled) continue;
                             o = ch.View.Outcome;
                         }
+                        yield return new WaitAction(ActionStyle.Item, c.Item!.Name, c.Item.Element, Icons.For(c.Item));
                         used = b.UseItem(c.Item, o);
                         break;
                     }
@@ -533,7 +604,15 @@ public sealed partial class DungeonScene : Scene
         if (won)
         {
             var reward = b.ClaimReward();
-            yield return new WaitSeconds(0.5f, false);
+            string banner = b.Outcome switch
+            {
+                BattleOutcome.Peace => "和解成立",
+                BattleOutcome.Intimidated => "威圧成功",
+                _ => "VICTORY",
+            };
+            yield return new WaitSeconds(0.35f, false);
+            S.Cue(Cue.Coin);
+            yield return new WaitPanel(PanelKind.Victory, banner, 0.5f, 1.5f);
             if (reward.Exp > 0) yield return Message($"経験値 {reward.Exp} を手に入れた！", Cue.Coin);
             foreach (var it in reward.Drops) yield return Message($"{b.Enemy.Name} は {it.Name} を落としていった！", Cue.Coin);
             foreach (var it in reward.Lost) yield return Message($"{it.Name} を見つけたが、もう持てない…", Cue.Buzzer);

@@ -41,6 +41,13 @@ public sealed class CreateScene(Services s) : Scene(s)
     private StartingStats _stats = StartingStats.Default;
     private bool _measured;
 
+    // 演出
+    private float _stepT;
+    private readonly Fx _fx = new();
+    private float _ember;
+    private Rectangle _cursor;
+    private float _genderK;
+
     public override void Enter()
     {
         S.Audio.PlayBgm("title");
@@ -52,6 +59,7 @@ public sealed class CreateScene(Services s) : Scene(s)
     private void GoStep(Step st)
     {
         _step = st;
+        _stepT = 0;
         In.TextMode = st == Step.Name;
         switch (st)
         {
@@ -74,6 +82,22 @@ public sealed class CreateScene(Services s) : Scene(s)
 
     protected override void Update(float dt)
     {
+        _stepT += dt;
+        _fx.Update(dt);
+        _ember += dt;
+        var rnd = new Random((int)(Time * 1000));
+        while (_ember > 0.09f)
+        {
+            _ember -= 0.09f;
+            _fx.Add(new Particle { Pos = new Vector2(rnd.Next(0, Gfx.Width), Gfx.Height + 10), Vel = new Vector2(rnd.Next(-25, 25), rnd.Next(-120, -50)), Life = 5 + ((float)rnd.NextDouble() * 4), Size = rnd.Next(5, 10), EndSize = 4, Color = new Color(255, 210, 120), EndColor = new Color(200, 60, 20) * 0.3f, Shape = ParticleShape.Pixel, Additive = true });
+        }
+        _genderK += ((_gender == Gender.Female ? 1 : 0) - _genderK) * Math.Min(1, dt * 12);
+        // 結果が出た瞬間に、才能の札が押されて火花が散る
+        if (_step == Step.Result && _stepT - dt < 1.05f && _stepT >= 1.05f)
+        {
+            _fx.Sparks(new Vector2(780, 420), 30, Palette.Gold, 520);
+            S.Cue(Cue.Coin);
+        }
         switch (_step)
         {
             case Step.Name: UpdateName(); break;
@@ -279,8 +303,13 @@ public sealed class CreateScene(Services s) : Scene(s)
     {
         var g = G;
         g.Batch.Begin();
-        Art.Cover(g, S.Assets.Background("dungeon"), 1.05f, default, new Color(90, 90, 105));
+        Art.Cover(g, S.Assets.Background("dungeon"), 1.05f + (0.02f * MathF.Sin(Time * 0.12f)), new Vector2(MathF.Sin(Time * 0.08f) * 10, 0), new Color(90, 90, 105));
         Art.Vignette(g);
+        g.Batch.End();
+        g.Batch.Begin(blendState: Microsoft.Xna.Framework.Graphics.BlendState.Additive);
+        _fx.DrawAdditive(g);
+        g.Batch.End();
+        g.Batch.Begin();
         string head = _step switch
         {
             Step.Name => "あなたの名前は？",
@@ -289,7 +318,17 @@ public sealed class CreateScene(Services s) : Scene(s)
             Step.TrialChoice or Step.Trials => "あなたの体で、強さが決まる",
             _ => "あなたの能力",
         };
-        if (_step != Step.Trials) g.TextCentered(head, new Vector2(Gfx.Width / 2f, 110), 64, Palette.Gold, bold: true);
+        if (_step != Step.Trials)
+        {
+            // 見出し：上からすっと降り、両側の飾りの線がのびる
+            float hk = Ease.OutCubic(_stepT / 0.35f);
+            g.TextFx(head, new Vector2(Gfx.Width / 2f, 110 - ((1 - hk) * 30)), 64, Palette.Gold * hk);
+            float hw = g.Measure(head, 64).X;
+            float lw = 160 * Ease.OutCubic(Ease.Span(_stepT, 0.1f, 0.5f));
+            g.Rect((Gfx.Width / 2f) - (hw / 2) - 40 - lw, 108, lw, 3, Palette.Frame);
+            g.Rect((Gfx.Width / 2f) + (hw / 2) + 40, 108, lw, 3, Palette.Frame);
+            DrawSteps(g);
+        }
 
         switch (_step)
         {
@@ -315,7 +354,23 @@ public sealed class CreateScene(Services s) : Scene(s)
         g.Window(box);
         string shown = _name + ((int)(Time * 2) % 2 == 0 && _name.Length < MaxName ? "＿" : "");
         g.TextCentered(shown.Length == 0 ? " " : shown, new Vector2(box.Center.X, box.Center.Y), 56, Color.White);
-        g.Window(new Rectangle(470, 312, 980, 690), 0.9f);
+        var gridWin = new Rectangle(470, 312, 980, 690);
+        float open = _stepT / 0.3f;
+        if (open < 1)
+        {
+            g.Window(Gfx.Opening(gridWin, open), 0.9f);
+            return;
+        }
+        g.Window(gridWin, 0.9f);
+        // カーソル：文字から文字へなめらかに動き、縁が脈打つ
+        var target = CellRect(_row, _col);
+        if (_cursor.Width == 0) _cursor = target;
+        _cursor = new Rectangle(
+            (int)MathHelper.Lerp(_cursor.X, target.X, 0.35f), (int)MathHelper.Lerp(_cursor.Y, target.Y, 0.35f),
+            (int)MathHelper.Lerp(_cursor.Width, target.Width, 0.35f), (int)MathHelper.Lerp(_cursor.Height, target.Height, 0.35f));
+        float pulse = 0.6f + (0.4f * MathF.Sin(Time * 7));
+        g.Rect(_cursor, Palette.Cursor * 0.3f);
+        g.Outline(new Rectangle(_cursor.X - 2, _cursor.Y - 2, _cursor.Width + 4, _cursor.Height + 4), Palette.Cursor * pulse, 3);
         for (int r = 0; r < Grid.Length; r++)
         {
             for (int c = 0; c < 10; c++)
@@ -323,7 +378,6 @@ public sealed class CreateScene(Services s) : Scene(s)
                 char ch = Grid[r][c];
                 var cell = CellRect(r, c);
                 bool sel = r == _row && c == _col;
-                if (sel) g.Rect(cell, Palette.Cursor * 0.35f);
                 if (ch != '　') g.TextCentered(ch.ToString(), new Vector2(cell.Center.X, cell.Center.Y), 44, sel ? Color.White : Palette.Text * 0.9f);
             }
         }
@@ -332,7 +386,7 @@ public sealed class CreateScene(Services s) : Scene(s)
         {
             var cell = CellRect(Grid.Length, c);
             bool sel = _row == Grid.Length && _col == c;
-            g.Rect(cell, (sel ? Palette.Cursor * 0.35f : new Color(40, 44, 70) * 0.8f));
+            g.Rect(cell, (sel ? Palette.Cursor * 0.2f : new Color(40, 44, 70) * 0.8f));
             g.Outline(cell, sel ? Color.White : Palette.BorderInner, 2);
             g.TextCentered(specials[c], new Vector2(cell.Center.X, cell.Center.Y), 38, c == 2 ? Palette.Gold : Color.White);
         }
@@ -344,14 +398,23 @@ public sealed class CreateScene(Services s) : Scene(s)
         for (int i = 0; i < 2; i++)
         {
             var gd = i == 0 ? Gender.Male : Gender.Female;
-            var r = new Rectangle(i == 0 ? 460 : 1020, 260, 440, 560);
+            // 選んでいる方へ 0 → 1（なめらかに切りかわる）
+            float k = i == 0 ? 1 - _genderK : _genderK;
+            float enter = Ease.OutBack(Ease.Span(_stepT, 0.05f + (i * 0.1f), 0.45f + (i * 0.1f)));
+            if (enter <= 0) continue;
+            var r = new Rectangle(i == 0 ? 460 : 1020, 260 - (int)(18 * k) + (int)((1 - enter) * 80), 440, 560);
             bool sel = gd == _gender;
-            g.Window(r, sel ? 1f : 0.6f, border: sel ? Palette.Gold : Palette.BorderInner);
+            if (k > 0.05f)
+            {
+                g.Glow(r.Center.ToVector2(), 420, Palette.Gold * (0.18f * k));
+            }
+            g.Window(r, 0.6f + (0.4f * k), border: Color.Lerp(Palette.BorderInner, Palette.Gold, k));
             var tex = S.Assets.Hero(gd);
-            float sc = Math.Min(380f / tex.Width, 460f / tex.Height) * (sel ? 1f + (0.02f * MathF.Sin(Time * 3)) : 0.92f);
-            var pos = new Vector2(r.Center.X - (tex.Width * sc / 2), r.Bottom - 50 - (tex.Height * sc));
-            g.Batch.Draw(tex, pos, null, Color.White * (sel ? 1f : 0.45f), 0, Vector2.Zero, sc, Microsoft.Xna.Framework.Graphics.SpriteEffects.None, 0);
-            g.TextCentered(i == 0 ? "勇者（男）" : "勇者（女）", new Vector2(r.Center.X, r.Bottom + 40), 40, sel ? Palette.Gold : Palette.Dim);
+            float bob = MathF.Sin((Time * 2.4f) + i) * 4 * k;
+            float sc = Math.Min(380f / tex.Width, 460f / tex.Height) * (0.92f + (0.08f * k));
+            var pos = new Vector2(r.Center.X - (tex.Width * sc / 2), r.Bottom - 50 - (tex.Height * sc) + bob);
+            g.Batch.Draw(tex, pos, null, Color.Lerp(new Color(70, 70, 90), Color.White, k) * enter, 0, Vector2.Zero, sc, Microsoft.Xna.Framework.Graphics.SpriteEffects.None, 0);
+            g.TextCentered(i == 0 ? "勇者（男）" : "勇者（女）", new Vector2(r.Center.X, r.Bottom + 40), 40, (sel ? Palette.Gold : Palette.Dim) * enter);
         }
         g.TextCentered($"{_name}", new Vector2(Gfx.Width / 2f, 200), 44, Color.White);
         g.TextCentered("見た目だけで、能力は変わりません", new Vector2(Gfx.Width / 2f, 940), 28, Palette.Dim);
@@ -390,7 +453,15 @@ public sealed class CreateScene(Services s) : Scene(s)
                 new Vector2(Gfx.Width / 2f, 960), 28, sensor ? Palette.Good : Palette.Dim);
         }
         int rows = _menu.Items.Count;
-        g.Window(new Rectangle(mr.X - 30, mr.Y - 24, mr.Width + 60, (int)(rows * _menu.RowHeight) + 48 + 70), 0.95f);
+        var mw = new Rectangle(mr.X - 30, mr.Y - 24, mr.Width + 60, (int)(rows * _menu.RowHeight) + 48 + 70);
+        float open = Ease.Span(_stepT, 0.1f, 0.35f);
+        if (open < 1)
+        {
+            if (open > 0) g.Window(Gfx.Opening(mw, open), 0.95f);
+            return;
+        }
+        g.Window(mw, 0.95f);
+        _menu.Reveal = _stepT - 0.35f;
         _menu.Draw(g, mr, Time);
         var desc = _menu.Selected?.Description ?? "";
         g.TextCentered(desc, new Vector2(Gfx.Width / 2f, mr.Y + (rows * _menu.RowHeight) + 40), 30, Palette.Dim);
@@ -405,11 +476,34 @@ public sealed class CreateScene(Services s) : Scene(s)
         float x = r.X + 340;
         g.Text($"{_name}", new Vector2(x, r.Y + 36), 52, Color.White);
         g.Text($"難しさ：{Names.Of(_difficulty)}", new Vector2(x + 520, r.Y + 50), 32, Palette.Dim);
-        g.Text($"HP {_stats.MaxHp}", new Vector2(x, r.Y + 120), 44, Palette.Hp);
-        g.Text($"攻撃 {_stats.Attack}", new Vector2(x + 260, r.Y + 120), 44, Palette.Gold);
-        g.Text($"素早さ {_stats.Speed}", new Vector2(x + 520, r.Y + 120), 44, Palette.Cursor);
-        g.Text($"才能：{Names.Of(_stats.Talent)}", new Vector2(x, r.Y + 200), 44, Palette.Good);
-        g.Text(Names.Describe(_stats.Talent), new Vector2(x, r.Y + 262), 32, Palette.Text);
+        // 数字が 0 から数え上がり、細いゲージがのびる
+        var stats = new (string Label, int Value, int Max, Color C)[]
+        {
+            ("HP", _stats.MaxHp, 160, Palette.Hp),
+            ("攻撃", _stats.Attack, 30, Palette.Gold),
+            ("素早さ", _stats.Speed, 30, Palette.Cursor),
+        };
+        for (int i = 0; i < stats.Length; i++)
+        {
+            var (label, value, max, c) = stats[i];
+            float k = Ease.OutCubic(Ease.Span(_stepT, 0.15f + (i * 0.15f), 0.85f + (i * 0.15f)));
+            float sx = x + (i * 260);
+            g.Text($"{label} {(int)MathF.Round(value * k)}", new Vector2(sx, r.Y + 112), 44, c);
+            var bar = new Rectangle((int)sx, r.Y + 170, 220, 10);
+            g.Rect(bar, Color.Black * 0.5f);
+            g.Rect(new Rectangle(bar.X, bar.Y, (int)(bar.Width * Math.Clamp(value / (float)max, 0, 1) * k), bar.Height), c);
+        }
+        // 才能の札：上からポンと押される
+        float tk = Ease.Span(_stepT, 0.95f, 1.25f);
+        if (tk > 0)
+        {
+            float stamp = 1 + ((1 - Ease.OutBack(tk)) * 1.2f);
+            string tal = $"才能：{Names.Of(_stats.Talent)}";
+            var tm = g.Measure(tal, 44);
+            g.TextFx(tal, new Vector2(x + (tm.X / 2), r.Y + 222), 44, Palette.Good * Math.Min(1, tk * 3), stamp, -0.04f * (1 - tk));
+            float dk = Ease.Span(_stepT, 1.2f, 1.5f);
+            g.Text(Names.Describe(_stats.Talent), new Vector2(x, r.Y + 266), 32, Palette.Text * dk);
+        }
         if (_measured)
         {
             string detail = S.Body.Mode == BodyMode.Sensor
@@ -418,8 +512,33 @@ public sealed class CreateScene(Services s) : Scene(s)
             g.TextCentered(detail, new Vector2(Gfx.Width / 2f, 572), 28, Palette.Dim);
         }
         var mr = ResultMenuRect;
-        g.Window(new Rectangle(mr.X - 30, mr.Y - 24, mr.Width + 60, mr.Height + 48), 0.95f);
+        float mo = Ease.Span(_stepT, 1.3f, 1.55f);
+        if (mo <= 0) return;
+        var mw = new Rectangle(mr.X - 30, mr.Y - 24, mr.Width + 60, mr.Height + 48);
+        g.Window(mo < 1 ? Gfx.Opening(mw, mo) : mw, 0.95f);
+        if (mo < 1) return;
+        _menu.Reveal = _stepT - 1.55f;
         _menu.Draw(g, mr, Time);
+    }
+
+    /// <summary>上の進み具合：名前 → 姿 → 難しさ → 測定 → 能力。</summary>
+    private void DrawSteps(Gfx g)
+    {
+        string[] names = ["名前", "姿", "難しさ", "測定", "能力"];
+        int cur = _step switch { Step.Name => 0, Step.Gender => 1, Step.Difficulty => 2, Step.TrialChoice or Step.Trials => 3, _ => 4 };
+        float x0 = Gfx.Width / 2f - 320, gap = 160;
+        float y = 30;
+        g.Rect(x0, y - 1, gap * 4, 2, Palette.BorderInner * 0.6f);
+        g.Rect(x0, y - 1, gap * cur, 2, Palette.Gold);
+        for (int i = 0; i < names.Length; i++)
+        {
+            var p = new Vector2(x0 + (i * gap), y);
+            bool done = i < cur, now = i == cur;
+            float sz = now ? 12 + (2 * MathF.Sin(Time * 5)) : 9;
+            g.Batch.Draw(g.Pixel, p, null, Color.Black, MathF.PI / 4, new Vector2(0.5f, 0.5f), sz + 5, Microsoft.Xna.Framework.Graphics.SpriteEffects.None, 0);
+            g.Batch.Draw(g.Pixel, p, null, now ? Palette.Gold : done ? Palette.Frame : Palette.Disabled, MathF.PI / 4, new Vector2(0.5f, 0.5f), sz, Microsoft.Xna.Framework.Graphics.SpriteEffects.None, 0);
+            g.TextCentered(names[i], p + new Vector2(0, 30), 22, now ? Color.White : done ? Palette.Dim : Palette.Disabled);
+        }
     }
 
     // ---- 動作確認（自動操作）用 ----

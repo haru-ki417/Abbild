@@ -163,7 +163,10 @@ public sealed partial class DungeonScene
             return;
         }
         var bgTint = boss ? new Color(200, 160, 160) : new Color(215, 215, 225);
-        Art.Cover(g, S.Assets.Background(biome.Background), 1.02f + (MathF.Sin(Time * 0.2f) * 0.006f), default, bgTint);
+        // 敵が現れた瞬間は、背景がぐっと寄ってから戻る。攻撃の突進でも少し寄る
+        float encZoom = (1 - Ease.OutCubic(_encounter / 0.7f)) * 0.22f;
+        float dashZoom = _dashT < DashTime ? MathF.Sin(_dashT / DashTime * MathF.PI) * 0.035f : 0;
+        Art.Cover(g, S.Assets.Background(biome.Background), 1.02f + (MathF.Sin(Time * 0.2f) * 0.006f) + encZoom + dashZoom, default, bgTint);
         Art.Vignette(g, 0.5f, 0.8f);
         if (boss) g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), new Color(80, 0, 0) * (0.12f + (0.05f * MathF.Sin(Time * 2))));
         batch.End();
@@ -180,6 +183,7 @@ public sealed partial class DungeonScene
         batch.End();
 
         batch.Begin();
+        if (_dashT < DashTime) DrawDash(g, _dashT / DashTime);
         DrawTopBar(g);
         DrawStatus(g);
         DrawMessages(g);
@@ -188,10 +192,16 @@ public sealed partial class DungeonScene
         batch.End();
         batch.Begin(blendState: BlendState.Additive);
         _fxTop.DrawAdditive(g);
+        if (_wait is WaitPanel { Kind: PanelKind.Victory } vr) DrawVictoryRays(g, vr);
         batch.End();
         batch.Begin();
         if (_wait is WaitPanel { Kind: PanelKind.LevelUp } lp) DrawLevelUp(g, lp);
+        if (_wait is WaitPanel { Kind: PanelKind.Victory } vp) DrawVictory(g, vp);
+        if (_wait is WaitPanel { Kind: PanelKind.Warning } wp) DrawWarning(g, wp);
+        if (_wait is WaitAction act) DrawAction(g, act);
         Art.Popups(g, _popups);
+        // 敵が現れた瞬間の白い光
+        if (_encounter < 0.3f && _battle is not null) g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), Color.White * (0.7f * (1 - (_encounter / 0.3f))));
         if (_heroFlash > 0) g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), new Color(255, 0, 0) * (_heroFlash * 0.12f));
         if (_redVignette > 0) Art.EdgeGlow(g, new Color(200, 0, 0), _redVignette * 0.8f);
         // HP が少ないときは、画面のふちが脈打つ
@@ -319,15 +329,23 @@ public sealed partial class DungeonScene
     {
         var b = _battle!;
         var art = _art!;
-        float scale = EnemyScale * (0.6f + (0.4f * Ease.OutBack(_enemyAppear)));
-        float alpha = Math.Min(1, _enemyAppear * 2);
+        // 登場：黒い影が下からせり上がり、光って色がつく
+        float rise = (1 - Ease.OutCubic(_encounter / 0.5f)) * 70;
+        float scale = EnemyScale * (0.9f + (0.1f * Ease.OutBack(_encounter / 0.5f)));
+        float alpha = Math.Min(1, _encounter / 0.25f);
+        float colorK = Ease.Span(_encounter, 0.45f, 0.8f);
         if (_enemyDeath >= 0)
         {
             // 白く光って、縦につぶれながら消える
             alpha *= 1 - Ease.OutCubic(_enemyDeath);
             scale *= 1 + (_enemyDeath * 0.15f);
         }
-        var feet = EnemyFeet + new Vector2(MathF.Sin(Time * 70) * 14 * _enemyShake, 0);
+        var feet = EnemyFeet + new Vector2(MathF.Sin(Time * 70) * 14 * _enemyShake, rise);
+        // 当たったときにのけぞる（右上へ押され、少し傾き、つぶれる）
+        float kn = _enemyKnock * _enemyKnock;
+        var knockOff = new Vector2(34 * kn, -14 * kn);
+        float knockRot = 0.09f * kn;
+        float knockSq = -0.08f * kn;
         // 影
         g.Batch.Begin();
         float shadowW = Math.Min(560, art.FrameWidth(false) * art.BaseScale * EnemyScale * 0.9f);
@@ -336,28 +354,29 @@ public sealed partial class DungeonScene
         g.Batch.End();
 
         g.Batch.Begin(samplerState: art.Pixel ? SamplerState.PointClamp : SamplerState.LinearClamp);
-        var color = Color.White * alpha;
+        var color = Color.Lerp(new Color(8, 6, 14), Color.White, colorK) * alpha;
         bool attacking = _enemyAttackT >= 0;
-        Art.Enemy(g, art, b.Enemy.Def, feet, _animTime, scale, color, attacking, Math.Max(0, _enemyAttackT));
+        Art.Enemy(g, art, b.Enemy.Def, feet, _animTime, scale, color, attacking, Math.Max(0, _enemyAttackT), knockOff, knockRot, knockSq);
         g.Batch.End();
         if (_enemyFlash > 0 || _enemyDeath >= 0)
         {
             // 当たったときに白く光らせる（加算）
             g.Batch.Begin(blendState: BlendState.Additive, samplerState: art.Pixel ? SamplerState.PointClamp : SamplerState.LinearClamp);
             float flash = Math.Max(_enemyFlash * 0.8f, _enemyDeath >= 0 ? 1 - _enemyDeath : 0);
-            Art.Enemy(g, art, b.Enemy.Def, feet, _animTime, scale, Color.White * (flash * alpha * 1.5f), attacking, Math.Max(0, _enemyAttackT));
+            Art.Enemy(g, art, b.Enemy.Def, feet, _animTime, scale, Color.White * (flash * alpha * 1.5f), attacking, Math.Max(0, _enemyAttackT), knockOff, knockRot, knockSq);
             g.Batch.End();
         }
 
-        // 名前と HP
+        // 名前と HP（登場のあと、上から降りてくる）
         g.Batch.Begin();
-        if (_enemyDeath < 0.5f)
+        float plateK = Ease.OutBack(Ease.Span(_encounter, 0.5f, 0.9f));
+        if (_enemyDeath < 0.5f && plateK > 0)
         {
             float trail = b.Enemy.MaxHp == 0 ? -1 : _enemyTrail / b.Enemy.MaxHp;
             float ratio = _enemyDisplayHp / Math.Max(1, b.Enemy.MaxHp);
             if (b.Enemy.IsBoss)
             {
-                var plate = new Rectangle(440, 96, 1040, 96);
+                var plate = new Rectangle(440, 96 - (int)((1 - plateK) * 160), 1040, 96);
                 g.Window(plate, 0.95f, new Color(60, 14, 20, 236), new Color(220, 70, 60));
                 var tag = new Rectangle(plate.X + 22, plate.Y + 16, 96, 34);
                 g.Rect(tag, new Color(200, 40, 40));
@@ -369,7 +388,7 @@ public sealed partial class DungeonScene
             }
             else
             {
-                float top = Math.Max(150, EnemyFeet.Y - Art.EnemyHeight(art, EnemyScale) - 50);
+                float top = Math.Max(150, EnemyFeet.Y - Art.EnemyHeight(art, EnemyScale) - 50) - ((1 - plateK) * 80);
                 string name = b.EnemyDisplayName;
                 var m = g.Measure(name, 34);
                 var plate = new Rectangle((int)(960 - Math.Max(170, (m.X / 2) + 30)), (int)top - 50, (int)Math.Max(340, m.X + 60), 82);
@@ -448,11 +467,11 @@ public sealed partial class DungeonScene
         Icons.Draw(g, "heart", new Vector2(x, r.Y + 76), 30);
         var hpBar = new Rectangle((int)x + 42, r.Y + 80, 316, 22);
         g.Bar(hpBar, hpRatio, hpColor, Palette.HpDark, trail: h.MaxHp == 0 ? -1 : _hpTrail / h.MaxHp);
-        g.TextRight($"{h.Hp} / {h.MaxHp}", new Vector2(r.Right - 22, r.Y + 108), 28, danger ? Palette.Bad : Color.White);
+        g.TextRight($"{(int)MathF.Round(Math.Clamp(_displayHp, 0, h.MaxHp))} / {h.MaxHp}", new Vector2(r.Right - 22, r.Y + 108), 28, danger ? Palette.Bad : Color.White);
 
         Icons.Draw(g, "drop", new Vector2(x, r.Y + 142), 30);
         g.Bar(new Rectangle((int)x + 42, r.Y + 148, 316, 16), h.MaxMp == 0 ? 0 : _displayMp / h.MaxMp, Palette.Mp, Palette.MpDark);
-        g.TextRight($"{h.Mp} / {h.MaxMp}", new Vector2(r.Right - 22, r.Y + 170), 26, Color.White);
+        g.TextRight($"{(int)MathF.Round(Math.Clamp(_displayMp, 0, h.MaxMp))} / {h.MaxMp}", new Vector2(r.Right - 22, r.Y + 170), 26, Color.White);
 
         // 状態の札
         float bx = x;
@@ -508,13 +527,27 @@ public sealed partial class DungeonScene
 
     private void DrawCommand(Gfx g)
     {
-        g.Window(CommandRect, 0.96f);
-        _main.Draw(g, CommandMenuRect, Time, _pane == Pane.Main);
+        // 左からすべり込み、項目が 1 つずつ現れる
+        int slide = (int)((1 - Ease.OutCubic(_cmdT / 0.28f)) * -480);
+        var cr = CommandRect;
+        cr.Offset(slide, 0);
+        var cm = CommandMenuRect;
+        cm.Offset(slide, 0);
+        g.Window(cr, 0.96f);
+        _main.Reveal = _cmdT;
+        _main.Draw(g, cm, Time, _pane == Pane.Main);
+        _list.Reveal = _paneT;
+        float open = _paneT / 0.22f;
         switch (_pane)
         {
             case Pane.Skills:
             case Pane.Items:
             {
+                if (open < 1)
+                {
+                    g.Window(Gfx.Opening(ListRect, open), 0.97f);
+                    break;
+                }
                 g.Window(ListRect, 0.97f);
                 g.Text(_pane == Pane.Skills ? "スキル" : "どうぐ", new Vector2(ListRect.X + 30, ListRect.Y + 20), 40, Palette.Gold);
                 if (_pane == Pane.Skills) g.TextRight($"MP {_run.Hero.Mp} / {_run.Hero.MaxMp}", new Vector2(ListRect.Right - 30, ListRect.Y + 26), 32, Palette.Mp);
@@ -526,12 +559,18 @@ public sealed partial class DungeonScene
                 break;
             }
             case Pane.Status:
-                DrawStatusDetail(g);
+                if (open < 1) g.Window(Gfx.Opening(new Rectangle(450, 100, 1060, 650), open), 0.97f);
+                else DrawStatusDetail(g);
                 break;
             case Pane.System:
             case Pane.ConfirmTitle:
             {
                 var r = new Rectangle(SystemMenuRect.X - 40, SystemMenuRect.Y - 100, SystemMenuRect.Width + 80, SystemMenuRect.Height + 190);
+                if (open < 1 && _pane == Pane.System)
+                {
+                    g.Window(Gfx.Opening(r, open), 0.97f);
+                    break;
+                }
                 g.Window(r, 0.97f);
                 if (_pane == Pane.System)
                 {
@@ -585,6 +624,11 @@ public sealed partial class DungeonScene
     {
         var mr = WaitChoice.ChoiceRect(c.Menu.Items.Count);
         var r = new Rectangle(mr.X - 40, mr.Y - 100, mr.Width + 80, mr.Height + 130);
+        if (c.T < 0.22f)
+        {
+            g.Window(Gfx.Opening(r, c.T / 0.22f), 0.97f);
+            return;
+        }
         g.Window(r, 0.97f);
         g.TextCentered(c.Question, new Vector2(r.Center.X, r.Y + 50), 38, Color.White);
         c.Menu.Draw(g, mr, Time);
@@ -593,31 +637,275 @@ public sealed partial class DungeonScene
     private void DrawLevelUp(Gfx g, WaitPanel p)
     {
         var up = (LevelUpResult)p.Data;
-        float k = Ease.OutBack(Math.Min(1, p.T / 0.4f));
-        var r = new Rectangle(560, 200, 800, 440 + (up.NewSkills.Count * 50));
-        var center = r.Center.ToVector2();
-        g.Glow(center, 600 * k, Palette.Gold * 0.25f);
-        g.Window(r, k, border: Palette.Gold);
-        g.TextCentered("レベルアップ！", new Vector2(center.X, r.Y + 64), 64 * k, Palette.Gold, bold: true);
-        g.TextCentered($"Lv {up.Level}", new Vector2(center.X, r.Y + 140), 52, Color.White);
-        string[] rows =
-        [
-            $"最大HP +{up.Hp}　最大MP +{up.Mp}",
-            $"攻撃 +{up.Attack}　防御 +{up.Defense}" + (up.Speed > 0 ? $"　素早さ +{up.Speed}" : ""),
-            "HP と MP がすべて回復した！",
-        ];
-        float y = r.Y + 210;
-        foreach (var row in rows)
+        float t = p.T;
+        var full = new Rectangle(560, 190, 800, 470 + (up.NewSkills.Count * 50));
+        var center = full.Center.ToVector2();
+        g.Glow(center, 640 * Ease.OutCubic(t / 0.4f), Palette.Gold * 0.25f);
+        if (t < 0.28f)
         {
-            g.TextCentered(row, new Vector2(center.X, y), 36, Color.White);
-            y += 56;
+            g.Window(Gfx.Opening(full, t / 0.28f), 1, border: Palette.Gold);
+            return;
         }
-        foreach (var s in up.NewSkills)
+        g.Window(full, 1, border: Palette.Gold);
+
+        // 「レベルアップ！」：1 文字ずつ落ちて弾む
+        const string title = "レベルアップ！";
+        float size = 64;
+        float total = 0;
+        foreach (char ch in title) total += g.Measure(ch.ToString(), size).X;
+        float x = center.X - (total / 2);
+        for (int i = 0; i < title.Length; i++)
         {
-            g.TextCentered($"新しいスキル「{s.Name}」を覚えた！", new Vector2(center.X, y), 36, Palette.Good);
+            float w = g.Measure(title[i].ToString(), size).X;
+            float k = Ease.Span(t, 0.25f + (i * 0.04f), 0.6f + (i * 0.04f));
+            if (k > 0)
+            {
+                float drop = (1 - Ease.OutBounce(k)) * 80;
+                float wave = MathF.Sin((Time * 5) - (i * 0.6f)) * 4 * Ease.Span(t, 1.2f, 1.5f);
+                g.TextFx(title[i].ToString(), new Vector2(x + (w / 2), full.Y + 70 - drop + wave), size, Palette.Gold * Math.Min(1, k * 3));
+            }
+            x += w;
+        }
+
+        // Lv 41 → 42（新しい数字がはじける）
+        float lk = Ease.Span(t, 0.45f, 0.75f);
+        if (lk > 0)
+        {
+            var lvPos = new Vector2(center.X, full.Y + 152);
+            g.TextFx($"Lv {up.Level - 1}", lvPos - new Vector2(130, 0), 44, Palette.Dim * lk);
+            g.TextFx("→", lvPos, 40, Palette.Gold * lk);
+            g.TextFx($"Lv {up.Level}", lvPos + new Vector2(140, 0), 56, Color.White * lk, Ease.OutElastic(lk));
+        }
+
+        // 上がった値：右からすべり込み、数字が 0 から数え上がる
+        var rows = new List<(string Label, int Value, Color C)>
+        {
+            ("最大HP", up.Hp, new Color(120, 230, 140)),
+            ("最大MP", up.Mp, new Color(110, 170, 255)),
+            ("攻撃", up.Attack, new Color(255, 170, 110)),
+            ("防御", up.Defense, new Color(200, 200, 230)),
+        };
+        if (up.Speed > 0) rows.Add(("素早さ", up.Speed, new Color(150, 240, 230)));
+        float y = full.Y + 220;
+        int col = 0;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var (label, value, c) = rows[i];
+            float k = Ease.Span(t, 0.6f + (i * 0.08f), 0.85f + (i * 0.08f));
+            if (k <= 0) continue;
+            float slide = (1 - Ease.OutCubic(k)) * 120;
+            float cx = col == 0 ? full.X + 100 : full.X + 430;
+            float ry = y + ((i / 2) * 54);
+            col = (col + 1) % 2;
+            g.Text(label, new Vector2(cx + slide, ry), 34, Color.White * k);
+            int shown = (int)MathF.Round(value * Ease.OutCubic(Ease.Span(t, 0.7f + (i * 0.08f), 1.1f + (i * 0.08f))));
+            g.TextRight($"+{shown}", new Vector2(cx + 270 + slide, ry), 34, c * k);
+        }
+        y += ((rows.Count + 1) / 2 * 54) + 14;
+        float hk = Ease.Span(t, 1.05f, 1.3f);
+        if (hk > 0) g.TextCentered("HP と MP がすべて回復した！", new Vector2(center.X, y + 10), 32, Palette.Text * hk);
+        y += 56;
+        foreach (var sk in up.NewSkills)
+        {
+            float sk2 = Ease.Span(t, 1.2f, 1.5f);
+            if (sk2 > 0) g.TextFx($"新しいスキル「{sk.Name}」を覚えた！", new Vector2(center.X, y + 12), 36, Palette.Good * sk2, 0.8f + (0.2f * Ease.OutBack(sk2)));
             y += 50;
         }
     }
+
+    /// <summary>勝利：帯が開き、文字が 1 つずつ落ちて弾む。後ろで光の筋が回る（DrawVictoryRays）。</summary>
+    private void DrawVictory(Gfx g, WaitPanel p)
+    {
+        string text = (string)p.Data;
+        float t = p.T;
+        float open = Ease.OutCubic(t / 0.2f);
+        float close = Ease.InCubic(Ease.Span(t, 1.25f, 1.5f));
+        int bandH = (int)(200 * open * (1 - close));
+        if (bandH <= 2) return;
+        var cy = 380;
+        for (int i = 0; i < 24; i++)
+        {
+            float edge = Math.Clamp(MathF.Min(i, 23 - i) / 5f, 0, 1);
+            g.Rect(new Rectangle(Gfx.Width * i / 24, cy - (bandH / 2), (Gfx.Width / 24) + 1, bandH), Color.Black * (0.6f * edge));
+        }
+        float lw = 1400 * open;
+        g.Rect(960 - (lw / 2), cy - (bandH / 2), lw, 3, Palette.Gold);
+        g.Rect(960 - (lw / 2), cy + (bandH / 2) - 3, lw, 3, Palette.Gold);
+        bool latin = text.All(c => c < 128);
+        float size = latin ? 150 : 120;
+        float total = 0;
+        var widths = text.Select(c => g.Measure(c.ToString(), size).X * (latin ? 1.05f : 1f)).ToArray();
+        total = widths.Sum();
+        float x = 960 - (total / 2);
+        for (int i = 0; i < text.Length; i++)
+        {
+            float k = Ease.Span(t, 0.08f + (i * 0.05f), 0.5f + (i * 0.05f));
+            if (k > 0)
+            {
+                float drop = (1 - Ease.OutBounce(k)) * 160;
+                float shine = MathF.Max(0, 1 - MathF.Abs(((t - 0.7f) * 9) - i));
+                var col = Color.Lerp(Palette.Gold, Color.White, shine) * Math.Min(1, k * 3) * (1 - close);
+                g.TextFx(text[i].ToString(), new Vector2(x + (widths[i] / 2), cy - drop), size, col);
+            }
+            x += widths[i];
+        }
+    }
+
+    private void DrawVictoryRays(Gfx g, WaitPanel p)
+    {
+        float t = p.T;
+        float a = Ease.OutCubic(t / 0.3f) * (1 - Ease.InCubic(Ease.Span(t, 1.1f, 1.5f)));
+        if (a <= 0) return;
+        var c = new Vector2(960, 380);
+        for (int i = 0; i < 14; i++)
+        {
+            float ang = (i * MathF.Tau / 14) + (t * 0.5f);
+            g.Batch.Draw(g.GlowTex, c, null, new Color(255, 210, 120) * (0.5f * a), ang, new Vector2(64, 64), new Vector2(11f, 0.45f), SpriteEffects.None, 0);
+        }
+        g.Glow(c, 460, new Color(255, 200, 100) * (0.5f * a));
+    }
+
+    /// <summary>ボスの前の警告：上下に黄色と黒のしま模様が流れ、WARNING が点滅する。</summary>
+    private void DrawWarning(Gfx g, WaitPanel p)
+    {
+        float t = p.T;
+        float open = Ease.OutCubic(t / 0.25f);
+        float close = Ease.InCubic(Ease.Span(t, 1.7f, 2.0f));
+        float k = open * (1 - close);
+        g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), new Color(40, 0, 0) * (0.6f * k));
+        // しま模様の帯（上と下）
+        foreach (int baseY in new[] { 250, 560 })
+        {
+            int h = (int)(46 * k);
+            if (h <= 0) continue;
+            var band = new Rectangle(0, baseY + ((46 - h) / 2), Gfx.Width, h);
+            g.Rect(band, new Color(20, 10, 10));
+            float scroll = (t * 260 * (baseY == 250 ? 1 : -1)) % 80;
+            for (float sx = -120 + scroll; sx < Gfx.Width + 80; sx += 80)
+            {
+                // 斜めのしま（細い平行四辺形を縦の短冊で近似）
+                for (int j = 0; j < h; j += 2)
+                {
+                    g.Rect(sx + (j * 0.8f), band.Y + j, 36, 2, new Color(240, 190, 40));
+                }
+            }
+        }
+        // WARNING
+        float blink = 0.65f + (0.35f * MathF.Sin(t * 14));
+        float sc = 0.8f + (0.2f * Ease.OutBack(t / 0.35f));
+        g.TextFx("WARNING", new Vector2(960, 420), 150, new Color(255, 70, 60) * (k * blink), sc);
+        g.TextFx("強大な気配が近づいてくる…", new Vector2(960, 520), 40, Color.White * (k * Ease.Span(t, 0.4f, 0.7f)));
+    }
+
+    /// <summary>こちらの行動の演出。</summary>
+    private void DrawAction(Gfx g, WaitAction a)
+    {
+        float t = a.T;
+        switch (a.Style)
+        {
+            case ActionStyle.Item:
+            {
+                // 道具が勇者の手元から弧を描いて飛ぶ
+                float k = Ease.InOutSine(t / a.Duration);
+                var from = new Vector2(300, 820);
+                var to = new Vector2(960, 430);
+                var pos = Vector2.Lerp(from, to, k) - new Vector2(0, MathF.Sin(k * MathF.PI) * 220);
+                g.Glow(pos, 90, Color.White * 0.35f);
+                if (a.Icon is not null) Icons.Draw(g, a.Icon, pos - new Vector2(40, 40), 80);
+                break;
+            }
+            case ActionStyle.CutIn:
+                DrawCutIn(g, a);
+                break;
+        }
+    }
+
+    private const float DashTime = 0.32f;
+
+    /// <summary>攻撃の突進：画面のふちから敵へ集まる集中線（窓の後ろに描く）。</summary>
+    private void DrawDash(Gfx g, float p)
+    {
+        float k = MathF.Sin(Math.Clamp(p, 0, 1) * MathF.PI);
+        var c = EnemyCenter;
+        var rnd = new Random(7 + (int)(p * 12));
+        for (int i = 0; i < 46; i++)
+        {
+            float ang = (float)rnd.NextDouble() * MathF.Tau;
+            float r0 = 480 + ((float)rnd.NextDouble() * 200) - (p * 160);
+            float len = 260 + ((float)rnd.NextDouble() * 420 * k);
+            var dir = new Vector2(MathF.Cos(ang), MathF.Sin(ang));
+            g.Line(c + (dir * r0), c + (dir * (r0 + len)), Color.White * (0.5f * k), 3 + ((float)rnd.NextDouble() * 4));
+        }
+        g.Glow(new Vector2(260, 900), 420 * k, new Color(255, 240, 200) * (0.3f * k));
+    }
+
+    /// <summary>スキルのカットイン：斜めのしまが流れる帯に勇者がすべり込み、技の名前が右から入る。</summary>
+    private void DrawCutIn(Gfx g, WaitAction a)
+    {
+        float t = a.T, d = a.Duration;
+        var accent = a.Element switch
+        {
+            Element.Fire => new Color(255, 120, 50),
+            Element.Ice => new Color(120, 210, 255),
+            Element.Thunder => new Color(255, 230, 80),
+            Element.Poison => new Color(190, 110, 255),
+            Element.Holy => new Color(255, 245, 190),
+            _ => Palette.Gold,
+        };
+        float open = Ease.OutCubic(t / 0.16f);
+        float close = Ease.InCubic(Ease.Span(t, d - 0.16f, d));
+        int h = (int)(300 * open * (1 - close));
+        if (h <= 2) return;
+        var band = new Rectangle(0, 470 - (h / 2), Gfx.Width, h);
+        if (t < 0.12f) g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), Color.White * (0.35f * (1 - (t / 0.12f))));
+        g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), Color.Black * (0.35f * open * (1 - close)));
+        g.Rect(band, new Color(10, 10, 22) * 0.92f);
+        g.Batch.End();
+
+        // 帯の中だけに描く
+        var dev = g.Device;
+        var old = dev.ScissorRectangle;
+        dev.ScissorRectangle = band;
+        g.Batch.Begin(rasterizerState: CutInClip);
+        // 斜めに流れるしま
+        for (int i = 0; i < 18; i++)
+        {
+            float x = (((i * 140) - (t * 2200)) % 2600) + 2400;
+            if (x > 2300) x -= 2600;
+            g.Batch.Draw(g.Pixel, new Vector2(x, band.Center.Y), null, accent * (i % 3 == 0 ? 0.35f : 0.14f), 0.55f, new Vector2(0.5f, 0.5f), new Vector2(i % 3 == 0 ? 26 : 10, 700), SpriteEffects.None, 0);
+        }
+        // 勇者（上半身を大きく）
+        var hero = S.Assets.Hero(_run.Hero.Gender);
+        float hh = 820;
+        float sc = hh / hero.Height;
+        float hx = -380 + (Ease.OutCubic(t / 0.26f) * 900) + (t * 70);
+        var feet = new Vector2(hx, band.Center.Y - 190 + hh);
+        var org = new Vector2(hero.Width / 2f, hero.Height);
+        g.Batch.Draw(hero, feet + new Vector2(14, 0), null, accent * 0.75f, 0, org, sc, SpriteEffects.None, 0);
+        g.Batch.Draw(hero, feet, null, Color.White, 0, org, sc, SpriteEffects.None, 0);
+        g.Batch.End();
+        dev.ScissorRectangle = old;
+        g.Batch.Begin();
+
+        // 帯のふち
+        g.Rect(band.X, band.Y, band.Width, 5, accent);
+        g.Rect(band.X, band.Bottom - 5, band.Width, 5, accent);
+        g.Rect(band.X, band.Y + 9, band.Width, 2, Color.White * 0.6f);
+        g.Rect(band.X, band.Bottom - 11, band.Width, 2, Color.White * 0.6f);
+
+        // 技の名前（右から入って止まり、最後は左へ抜ける）
+        float nk = Ease.OutCubic(Ease.Span(t, 0.08f, 0.32f));
+        float nx = 2200 - (nk * 1000) - (close * 300);
+        float na = nk * (1 - close);
+        float size = a.Label.Length > 6 ? 84 : 100;
+        var m = g.Measure(a.Label, size);
+        g.TextFx("SKILL", new Vector2(nx - (m.X / 2) + 70, band.Center.Y - 96), 40, Color.Lerp(accent, Color.White, 0.3f) * na);
+        g.TextFx(a.Label, new Vector2(nx + 6, band.Center.Y + 10), size, accent * (0.6f * na), 1, 0, false);
+        g.TextFx(a.Label, new Vector2(nx, band.Center.Y + 4), size, Color.White * na);
+        if (a.Icon is not null) Icons.Draw(g, a.Icon, new Vector2(nx - (m.X / 2) - 110, band.Center.Y - 40), 80, na);
+    }
+
+    private static readonly RasterizerState CutInClip = new() { ScissorTestEnable = true, CullMode = CullMode.None };
 }
 
 public sealed partial class DungeonScene

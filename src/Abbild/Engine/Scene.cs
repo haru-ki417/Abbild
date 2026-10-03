@@ -185,4 +185,47 @@ public static class Ease
     }
 
     public static float InOutSine(float t) => -(MathF.Cos(MathF.PI * Math.Clamp(t, 0, 1)) - 1) / 2;
+
+    public static float InCubic(float t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return t * t * t;
+    }
+
+    public static float InOutCubic(float t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return t < 0.5f ? 4 * t * t * t : 1 - (MathF.Pow((-2 * t) + 2, 3) / 2);
+    }
+
+    public static float InBack(float t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        const float c1 = 1.70158f, c3 = c1 + 1;
+        return (c3 * t * t * t) - (c1 * t * t);
+    }
+
+    /// <summary>落ちて、はねて、止まる。</summary>
+    public static float OutBounce(float t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        const float n = 7.5625f, d = 2.75f;
+        if (t < 1 / d) return n * t * t;
+        if (t < 2 / d) { t -= 1.5f / d; return (n * t * t) + 0.75f; }
+        if (t < 2.5f / d) { t -= 2.25f / d; return (n * t * t) + 0.9375f; }
+        t -= 2.625f / d;
+        return (n * t * t) + 0.984375f;
+    }
+
+    /// <summary>行き過ぎて、ゆれて、止まる。</summary>
+    public static float OutElastic(float t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        if (t is 0 or 1) return t;
+        const float c4 = MathF.Tau / 3;
+        return (MathF.Pow(2, -10 * t) * MathF.Sin(((t * 10) - 0.75f) * c4)) + 1;
+    }
+
+    /// <summary>a〜b の区間での進み具合（0〜1）。</summary>
+    public static float Span(float t, float a, float b) => Math.Clamp((t - a) / (b - a), 0, 1);
 }

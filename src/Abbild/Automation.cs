@@ -18,6 +18,9 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     private sealed record Snap(string Name) : AutoWait;
     private sealed record Do(Action Action) : AutoWait;
 
+    /// <summary>動きの確認用：Count フレームのあいだ、Every フレームごとに撮影する（Name/000.png …）。</summary>
+    private sealed record Rec(string Name, int Count, int Every = 3, Func<int, Act[]>? Inject = null) : AutoWait;
+
     private IEnumerator<AutoWait>? _script;
     private AutoWait? _current;
     private int _frame;
@@ -29,7 +32,7 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     {
         s.Settings = new Settings { Fullscreen = false, BgmVolume = 0, SeVolume = 0, UseController = false, TextSpeed = 2 };
         s.ApplyAudioSettings();
-        _script = (options.AutoPlay ? AutoPlay() : options.Only == "fx" ? FxGallery() : options.Only == "challenges" ? ChallengeGallery() : Snapshots()).GetEnumerator();
+        _script = (options.AutoPlay ? AutoPlay() : options.Only == "fx" ? FxGallery() : options.Only == "challenges" ? ChallengeGallery() : options.Only == "motion" ? MotionReel() : Snapshots()).GetEnumerator();
         Next();
     }
 
@@ -83,6 +86,11 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
                 if (f.Inject is not null) s.Input.Inject(f.Inject(_frame));
                 if (++_frame >= f.Count) Next();
                 break;
+            case Rec r:
+                if (r.Inject is not null) s.Input.Inject(r.Inject(_frame));
+                if (_frame % r.Every == 0) _pendingSnap = $"{r.Name}/{_frame / r.Every:000}";
+                if (++_frame >= r.Count) Next();
+                break;
             case Until u:
                 if (u.Inject is not null) s.Input.Inject(u.Inject(_frame));
                 _frame++;
@@ -104,8 +112,9 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
         if (_pendingSnap is null) return;
         Directory.CreateDirectory(OutDir);
         string path = Path.Combine(OutDir, _pendingSnap + ".png");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using (var fs = File.Create(path)) target.SaveAsPng(fs, target.Width, target.Height);
-        Log($"撮影 {_pendingSnap}");
+        if (!_pendingSnap.Contains('/', StringComparison.Ordinal)) Log($"撮影 {_pendingSnap}");
         _pendingSnap = null;
     }
 
@@ -137,7 +146,7 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     private IEnumerable<AutoWait> Snapshots()
     {
         foreach (var w in Go(new TitleScene(s))) yield return w;
-        yield return new Frames(80);
+        yield return new Frames(150);
         yield return new Snap("01-title");
 
         var create = new CreateScene(s);
@@ -253,6 +262,63 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
     }
 
     // ------------------------------------------------------------------
+
+    /// <summary>動きの確認：場面ごとに数フレームおきに撮影する（あとで GIF にする）。</summary>
+    private IEnumerable<AutoWait> MotionReel()
+    {
+        // タイトル
+        foreach (var w in Go(new TitleScene(s))) yield return w;
+        yield return new Rec("m01-title", 156, 3);
+
+        // キャラ作成（姿の切りかえ・能力の発表）とプロローグ
+        var cr = new CreateScene(s);
+        foreach (var w in Go(cr)) yield return w;
+        yield return new Do(() => cr.Jump("gender", "ハルキ"));
+        yield return new Rec("m01b-create-gender", 60, 3, i => i == 30 ? [Act.Right] : []);
+        yield return new Do(() => cr.Jump("result"));
+        yield return new Rec("m01c-create-result", 110, 3);
+        foreach (var w in Go(new StoryScene(s, StoryScene.Prologue, "corridor", null, () => new TitleScene(s)))) yield return w;
+        yield return new Rec("m01d-prologue", 120, 3);
+
+        // 階の入り口 → 敵の登場
+        var run = NewRun(16, 3);
+        var d = new DungeonScene(s, run, fromSave: false);
+        foreach (var w in Go(d)) yield return w;
+        yield return new Rec("m02-floor-encounter", 200, 3);
+        yield return new Until(() => d.AwaitingCommand, 900, Every(8, Act.Confirm), "コマンド");
+        // コマンドが出てくるところと、カーソルの動き
+        yield return new Do(() => { });
+        yield return new Rec("m03-command", 70, 2, i => i is 24 or 34 ? [Act.Down] : i is 50 ? [Act.Up] : []);
+        // 攻撃 → 敵の反撃
+        yield return new Rec("m04-attack", 170, 2, i => i == 1 ? [Act.Up] : i == 4 ? [Act.Confirm] : (i > 60 && i % 20 == 0) ? [Act.Confirm] : []);
+        yield return new Until(() => d.AwaitingCommand, 900, Every(8, Act.Confirm), "コマンド");
+        // スキル（ファイア）のカットイン
+        yield return new Rec("m05-skill", 150, 2, i => i switch { 1 => [Act.Down], 6 => [Act.Confirm], 26 => [Act.Confirm], _ => [] });
+
+        // ボスの階：警告 → 登場
+        var boss = new DungeonScene(s, NewRun(30, 50, seed: 11), fromSave: false);
+        foreach (var w in Go(boss)) yield return w;
+        yield return new Rec("m06-boss", 300, 3);
+        yield return new Until(() => boss.AwaitingCommand, 900, Every(8, Act.Confirm), "ボスのコマンド");
+        yield return new Rec("m06b-boss-turn", 240, 2, i => i == 1 ? [Act.Confirm] : (i > 90 && i % 30 == 0 && boss.ActiveChallenge is null) ? [Act.Confirm] : []);
+
+        // 勝利 → レベルアップ
+        var vr = NewRun(14, 1, seed: 21);
+        vr.Hero.GainExp(vr.Hero.ExpToNext - 1, new GameRandom(1));
+        var v = new DungeonScene(s, vr, fromSave: false);
+        foreach (var w in Go(v)) yield return w;
+        yield return new Until(() => v.AwaitingCommand, 900, Every(8, Act.Confirm), "コマンド");
+        yield return new Rec("m07-victory", 330, 3, i => i == 1 ? [Act.Confirm] : (i > 120 && i % 45 == 0 && !v.ShowingLevelUp) ? [Act.Confirm] : []);
+
+        // ゲームオーバーとエンディング
+        var gr = NewRun(20, 33);
+        yield return new Do(() => scenes.Go(new GameOverScene(s, gr), 0.05f));
+        yield return new Rec("m08-gameover", 150, 3);
+        yield return new Do(() => scenes.Go(new EndingScene(s, NewRun(58, 100)), 0.05f));
+        yield return new Frames(400);
+        yield return new Rec("m09-ending", 60, 3);
+        yield return new Frames(2);
+    }
 
     /// <summary>ミニゲームの舞台を、種類ごとに本番の途中で撮る。</summary>
     private IEnumerable<AutoWait> ChallengeGallery()
