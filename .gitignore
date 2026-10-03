@@ -7,3 +7,5 @@ TestResults/
 artifacts/
 snapshots/
 *.log
+assets-src/
+__pycache__/

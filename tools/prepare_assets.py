@@ -189,7 +189,7 @@ def main() -> int:
         print(f"Resources が見つかりません: {res}", file=sys.stderr)
         return 1
 
-    for sub in ["bg", "enemies", "hero", "rmt", "bgm", "fonts"]:
+    for sub in ["bg", "enemies", "hero", "rmt", "fonts"]:
         (OUT / sub).mkdir(parents=True, exist_ok=True)
 
     for name, file in BACKGROUNDS.items():
@@ -228,9 +228,14 @@ def main() -> int:
     shutil.copyfile(rmt / "利用規約.txt", OUT / "rmt" / "TERMS_ja_sjis.txt")
     print("rmt strips", count)
 
+    # BGM は Ogg にしてから、取り出しにくい 1 つのファイル（Content/bgm.dat）にまとめる。
+    # Ogg そのものは配布物にもリポジトリにも入れない（assets-src/ は .gitignore 済み）
+    ogg_dir = ROOT / "assets-src" / "bgm"
+    ogg_dir.mkdir(parents=True, exist_ok=True)
     for name, file in BGM.items():
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(res / file), "-ac", "2", "-ar", "44100",
-                        "-c:a", "libvorbis", "-q:a", "4", str(OUT / "bgm" / f"{name}.ogg")], check=True)
+                        "-c:a", "libvorbis", "-q:a", "4", str(ogg_dir / f"{name}.ogg")], check=True)
+    subprocess.run([sys.executable, str(ROOT / "tools" / "pack_bgm.py"), str(ogg_dir), str(OUT / "bgm.dat")], check=True)
     print("bgm")
 
     if a.fonts:

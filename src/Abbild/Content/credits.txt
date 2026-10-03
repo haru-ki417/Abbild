@@ -8,10 +8,13 @@
 　https://rosemilktea.booth.pm/
 
 【背景・主人公・モンスターのイラスト】
-　画像生成 AI を使って制作
+　画像生成 AI（Google Gemini）を使って制作
 
 【BGM】
-　（配布元・作者名をここに書く）
+　OpenTracks（旧 DOVA-SYNDROME）
+　https://opentracks.com/
+　「BitCastle」 こおろぎ
+　「生者の行進」 稿屋 隆
 
 【効果音】
 　ゲームの中で合成（オリジナル）

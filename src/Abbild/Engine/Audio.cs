@@ -12,7 +12,7 @@ namespace Abbild.Engine;
 public sealed class Audio : IDisposable
 {
     private const int ChunkFrames = 4096;
-    private readonly string _bgmDir;
+    private readonly string _bgmPack;
     private readonly Dictionary<Cue, SoundEffect> _sfx = [];
     private DynamicSoundEffectInstance? _stream;
     private VorbisReader? _reader;
@@ -26,7 +26,7 @@ public sealed class Audio : IDisposable
 
     public Audio(string contentRoot)
     {
-        _bgmDir = Path.Combine(contentRoot, "bgm");
+        _bgmPack = Path.Combine(contentRoot, "bgm.dat");
         try
         {
             foreach (Cue c in Enum.GetValues<Cue>())
@@ -78,11 +78,13 @@ public sealed class Audio : IDisposable
         _current = _pending;
         _pending = null;
         if (_current is null) return;
-        string path = Path.Combine(_bgmDir, _current + ".ogg");
-        if (!File.Exists(path)) { _current = null; return; }
+        if (!File.Exists(_bgmPack)) { _current = null; return; }
         try
         {
-            _reader = new VorbisReader(path);
+            // BGM は bgm.dat にかき混ぜてまとめてある（音声ファイルとして取り出せないように）。メモリ上で戻して流す
+            var ogg = ContentPack.Load(_bgmPack, _current);
+            if (ogg is null) { _current = null; return; }
+            _reader = new VorbisReader(new MemoryStream(ogg, writable: false), closeOnDispose: true);
             _stream = new DynamicSoundEffectInstance(_reader.SampleRate, _reader.Channels == 1 ? AudioChannels.Mono : AudioChannels.Stereo);
             _floatBuf = new float[ChunkFrames * _reader.Channels];
             _byteBuf = new byte[ChunkFrames * _reader.Channels * 2];
@@ -92,7 +94,7 @@ public sealed class Audio : IDisposable
             _stream.Volume = 0;
             _stream.Play();
         }
-        catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException or IOException or ArgumentException)
+        catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException or IOException or ArgumentException or UnauthorizedAccessException)
         {
             StopStream();
             _current = null;
