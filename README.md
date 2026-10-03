@@ -65,8 +65,11 @@ src/Abbild/        MonoGame（DesktopGL）の画面
   Engine/            描画・音（BGM はその場で読み出し、効果音は合成）・入力
 tests/Abbild.Tests/ 単体テストと、自動プレイヤーによる難しさの確認
 tools/prepare_assets.py  元の素材から画像・音を作る（透過・縮小・Ogg 化）
+tools/pack_bgm.py  BGM（Ogg）を Content/bgm.dat にまとめる
 firmware/          Arduino のスケッチ
 ```
+
+> **このリポジトリには BGM が入っていません。** BGM は [OpenTracks（旧 DOVA-SYNDROME）](https://opentracks.com/) の曲で、その規約により音源を公開の場所に置けないためです。BGM なしでもそのまま遊べます。BGM を入れるときは、OpenTracks から曲をダウンロードして Ogg Vorbis にし、`title.ogg` `dungeon.ogg` `ending.ogg` `gameover.ogg` という名前でフォルダーにまとめてから、`python3 tools/pack_bgm.py <そのフォルダー> src/Abbild/Content/bgm.dat` を実行してください（`bgm.dat` は .gitignore 済み）。
 
 ```bash
 dotnet build Abbild.slnx
@@ -103,4 +106,5 @@ dotnet publish src/Abbild -c Release -r win-x64 --self-contained -o publish/Abbi
 ## ライセンス
 
 プログラム © 2026 Haruki Takahashi. All rights reserved.
+ソースコードは見てもらうために公開しています。改変・再配布・販売はできません。
 使っているライブラリ・フォントは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。

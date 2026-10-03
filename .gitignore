@@ -9,3 +9,5 @@ snapshots/
 *.log
 assets-src/
 __pycache__/
+# BGM（OpenTracks の規約で、公開の場所に置けない。tools/pack_bgm.py で手元に作る）
+src/Abbild/Content/bgm.dat

@@ -45,7 +45,8 @@ public class ContentPackTests
             if (File.Exists(p)) path = p;
             dir = dir.Parent;
         }
-        Assert.NotNull(path);
+        // bgm.dat は配布元の規約により公開リポジトリには入れていない。手元にあるときだけ確かめる
+        Assert.SkipWhen(path is null, "src/Abbild/Content/bgm.dat がない（公開リポジトリには BGM を入れていない）");
         using var fs = File.OpenRead(path!);
         var index = ContentPack.ReadIndex(fs);
         Assert.Equal(["dungeon", "ending", "gameover", "title"], index.Keys.Order(StringComparer.Ordinal).ToArray());
