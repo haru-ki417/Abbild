@@ -87,6 +87,8 @@ public sealed partial class DungeonScene
             case Pane.Skills:
             case Pane.Items:
             {
+                // 窓が開ききるまでは選べない（連打で見ないまま使わないように）
+                if (_paneT < 0.22f) return false;
                 int i = _list.Update(S, ListMenuRect);
                 if (In.Pressed(Act.Cancel) || In.MouseRightClicked)
                 {
@@ -104,6 +106,7 @@ public sealed partial class DungeonScene
                 return false;
             }
             case Pane.Status:
+                if (_paneT < 0.22f) return false;
                 if (In.Pressed(Act.Cancel) || In.Pressed(Act.Confirm) || In.MouseClicked)
                 {
                     S.Cue(Cue.Cancel);
@@ -112,6 +115,7 @@ public sealed partial class DungeonScene
                 return false;
             case Pane.System:
             {
+                if (_paneT < 0.22f) return false;
                 int i = _system.Update(S, SystemMenuRect);
                 if (In.Pressed(Act.Cancel) || i == 0)
                 {

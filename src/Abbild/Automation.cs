@@ -235,7 +235,7 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
         yield return new Frames(200);
         yield return new Snap("18-enemy-skill-running");
         yield return new Until(() => cave.ShowingLevelUp, 9000, Every(8, Act.Confirm), "レベルアップ");
-        yield return new Frames(30);
+        yield return new Frames(100);
         yield return new Snap("19-levelup");
 
         foreach (var w in Go(new GameOverScene(s, caveRun))) yield return w;

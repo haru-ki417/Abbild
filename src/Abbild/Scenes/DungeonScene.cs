@@ -106,6 +106,7 @@ public sealed partial class DungeonScene : Scene
         public override bool Update(DungeonScene d, float dt)
         {
             T += dt;
+            if (T < 0.22f) return false;
             Result = Menu.Update(d.S, ChoiceRect(Menu.Items.Count));
             return Result >= 0;
         }
@@ -275,17 +276,6 @@ public sealed partial class DungeonScene : Scene
         _encounter += dt;
         if (prevEnc < 0.45f && _encounter >= 0.45f && _battle is not null) _enemyFlash = Math.Max(_enemyFlash, 0.9f);
         _enemyKnock = Math.Max(0, _enemyKnock - (adt * 3.2f));
-        if (_wait is WaitCommand)
-        {
-            _cmdT += dt;
-            if ((int)_pane != _lastPane) { _lastPane = (int)_pane; _paneT = 0; }
-            _paneT += dt;
-        }
-        else
-        {
-            _cmdT = 0;
-            _lastPane = -1;
-        }
         var h = _run.Hero;
         _displayHp += (h.Hp - _displayHp) * Math.Min(1, dt * 6);
         // 減った分の白いあとは、少し遅れてから追いかける
@@ -302,6 +292,19 @@ public sealed partial class DungeonScene : Scene
         Art.Age(_popups, dt);
 
         if (_wait is not null && _wait.Update(this, dt)) Advance();
+
+        // コマンドの窓の出入り（選んだ結果で窓が変わったら、その場で 0 からやり直す）
+        if (_wait is WaitCommand)
+        {
+            _cmdT += dt;
+            if ((int)_pane != _lastPane) { _lastPane = (int)_pane; _paneT = 0; }
+            else _paneT += dt;
+        }
+        else
+        {
+            _cmdT = 0;
+            _lastPane = -1;
+        }
     }
 
     public override Vector2 Shake => _shake <= 0 ? Vector2.Zero

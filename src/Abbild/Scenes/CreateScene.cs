@@ -45,7 +45,7 @@ public sealed class CreateScene(Services s) : Scene(s)
     private float _stepT;
     private readonly Fx _fx = new();
     private float _ember;
-    private Rectangle _cursor;
+    private Vector4 _cursor;
     private float _genderK;
 
     public override void Enter()
@@ -97,6 +97,13 @@ public sealed class CreateScene(Services s) : Scene(s)
         {
             _fx.Sparks(new Vector2(780, 420), 30, Palette.Gold, 520);
             S.Cue(Cue.Coin);
+        }
+        // 画面が出そろうまでは選べない（前の画面の連打で決めてしまわないように）。結果の画面は決定で早送り
+        float ready = _step switch { Step.Name => 0.3f, Step.Difficulty or Step.TrialChoice => 0.35f, Step.Result => 1.55f, _ => 0f };
+        if (_stepT < ready)
+        {
+            if (_step == Step.Result && _stepT > 0.3f && In.Pressed(Act.Confirm)) _stepT = ready;
+            return;
         }
         switch (_step)
         {
@@ -191,7 +198,7 @@ public sealed class CreateScene(Services s) : Scene(s)
         if (In.Pressed(Act.Cancel))
         {
             if (_name.Length > 0) { _name = _name[..^1]; S.Cue(Cue.Cancel); }
-            else { S.Cue(Cue.Cancel); S.Game.Scenes.Go(new TitleScene(S)); }
+            else { S.Cue(Cue.Cancel); S.Game.Scenes.Go(new TitleScene(S, quick: true)); }
         }
     }
 
@@ -363,14 +370,14 @@ public sealed class CreateScene(Services s) : Scene(s)
         }
         g.Window(gridWin, 0.9f);
         // カーソル：文字から文字へなめらかに動き、縁が脈打つ
-        var target = CellRect(_row, _col);
-        if (_cursor.Width == 0) _cursor = target;
-        _cursor = new Rectangle(
-            (int)MathHelper.Lerp(_cursor.X, target.X, 0.35f), (int)MathHelper.Lerp(_cursor.Y, target.Y, 0.35f),
-            (int)MathHelper.Lerp(_cursor.Width, target.Width, 0.35f), (int)MathHelper.Lerp(_cursor.Height, target.Height, 0.35f));
+        var tr = CellRect(_row, _col);
+        var target = new Vector4(tr.X, tr.Y, tr.Width, tr.Height);
+        if (_cursor.Z == 0) _cursor = target;
+        _cursor = Vector4.Lerp(_cursor, target, 0.35f);
+        var cur = new Rectangle((int)MathF.Round(_cursor.X), (int)MathF.Round(_cursor.Y), (int)MathF.Round(_cursor.Z), (int)MathF.Round(_cursor.W));
         float pulse = 0.6f + (0.4f * MathF.Sin(Time * 7));
-        g.Rect(_cursor, Palette.Cursor * 0.3f);
-        g.Outline(new Rectangle(_cursor.X - 2, _cursor.Y - 2, _cursor.Width + 4, _cursor.Height + 4), Palette.Cursor * pulse, 3);
+        g.Rect(cur, Palette.Cursor * 0.3f);
+        g.Outline(new Rectangle(cur.X - 2, cur.Y - 2, cur.Width + 4, cur.Height + 4), Palette.Cursor * pulse, 3);
         for (int r = 0; r < Grid.Length; r++)
         {
             for (int c = 0; c < 10; c++)

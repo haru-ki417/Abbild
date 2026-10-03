@@ -83,6 +83,7 @@ dotnet publish src/Abbild -c Release -r win-x64 --self-contained -o publish/Abbi
 - `--autoplay <秒>`：でたらめな操作で遊び続ける（落ちないことの確認）
 - `--snapshots <フォルダー> --only fx`：戦闘の演出を種類ごとに撮影する
 - `--snapshots <フォルダー> --only challenges`：ミニゲームの画面を種類ごとに撮影する
+- `--snapshots <フォルダー> --only motion`：動き（演出）を数フレームおきに撮影する
 - `--data <フォルダー>`：セーブの置き場所を変える
 
 難しさは自動プレイヤー（`tests/Abbild.Tests/Bot.cs`）で何百回も遊ばせて調整しています。ミニゲームの成功率が 6 割の人でのクリア率は次のとおりです。

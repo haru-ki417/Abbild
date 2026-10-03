@@ -223,7 +223,7 @@ public sealed class CreditsScene(Services s, string file = "credits.txt", string
         if (In.Pressed(Act.Cancel) || In.Pressed(Act.Confirm) || In.MouseRightClicked)
         {
             S.Cue(Cue.Cancel);
-            S.Game.Scenes.Go(new TitleScene(S));
+            S.Game.Scenes.Go(new TitleScene(S, quick: true));
         }
     }
 

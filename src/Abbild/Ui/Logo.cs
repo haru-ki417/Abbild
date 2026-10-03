@@ -14,6 +14,7 @@ public static class Logo
     private static Texture2D? _logo;
     private static Texture2D? _mask;
     private static readonly List<Rectangle> _letters = [];
+    private static readonly List<(Texture2D Tex, int X)> _letterTex = [];
 
     /// <summary>文字の数。</summary>
     public static int LetterCount => _letters.Count;
@@ -97,14 +98,6 @@ public static class Logo
             placed.Add((start, ox - 1));
             ox += gap;
         }
-        // 1 文字ずつ動かすための区切り（文字と文字のあいだの真ん中で切る）
-        _letters.Clear();
-        for (int i = 0; i < placed.Count; i++)
-        {
-            int l = i == 0 ? 0 : (placed[i - 1].To + placed[i].From) / 2;
-            int r = i == placed.Count - 1 ? w : (placed[i].To + placed[i + 1].From) / 2;
-            _letters.Add(new Rectangle(l, 0, r - l, h));
-        }
         int top = h, bottom = 0;
         for (int i = 0; i < a.Length; i++)
         {
@@ -115,6 +108,40 @@ public static class Logo
                 bottom = Math.Max(bottom, y);
             }
         }
+
+        // ロゴ全体（光の帯の型と大きさに使う）
+        var (dst, mask) = Paint(a, w, h, top, bottom);
+        _logo = new Texture2D(dev, w, h);
+        _logo.SetData(dst);
+        _mask = new Texture2D(dev, w, h);
+        _mask.SetData(mask);
+
+        // 1 文字ずつの絵（縁取りもその文字だけで作る。落ちてくるときに隣の縁が欠けないように）
+        foreach (var t in _letterTex) t.Tex.Dispose();
+        _letterTex.Clear();
+        _letters.Clear();
+        const int margin = 14;
+        foreach (var (from, to) in placed)
+        {
+            int x0 = Math.Max(0, from - margin), x1 = Math.Min(w - 1, to + margin);
+            int lw = x1 - x0 + 1;
+            var la = new float[lw * h];
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = from; x <= to; x++) la[(y * lw) + (x - x0)] = a[(y * w) + x];
+            }
+            var (ld, _) = Paint(la, lw, h, top, bottom);
+            var tex = new Texture2D(dev, lw, h);
+            tex.SetData(ld);
+            _letterTex.Add((tex, x0));
+            _letters.Add(new Rectangle(x0, 0, lw, h));
+        }
+        return (_logo, _mask);
+    }
+
+    /// <summary>文字の形（0〜1）から、縁取り・金のグラデーション・上の縁の光をつけた絵を作る。</summary>
+    private static (Color[] Image, Color[] Mask) Paint(float[] a, int w, int h, int top, int bottom)
+    {
         float[] Dilate(float[] input, int r)
         {
             var o = new float[input.Length];
@@ -173,11 +200,7 @@ public static class Logo
                 dst[i] = c;
             }
         }
-        _logo = new Texture2D(dev, w, h);
-        _logo.SetData(dst);
-        _mask = new Texture2D(dev, w, h);
-        _mask.SetData(mask);
-        return (_logo, _mask);
+        return (dst, mask);
     }
 
     /// <summary>
@@ -189,18 +212,16 @@ public static class Logo
         var (logo, mask) = Get(g);
         var origin = new Vector2(logo.Width / 2f, logo.Height / 2f);
         var topLeft = center - (origin * scale);
-        for (int i = 0; i < _letters.Count; i++)
+        for (int i = 0; i < _letterTex.Count; i++)
         {
-            var src = _letters[i];
+            var (tex, lx) = _letterTex[i];
             float k = Ease.Span(intro, LetterStart(i), LetterStart(i) + 0.5f);
             if (k <= 0) continue;
             float drop = (1 - Ease.OutBounce(k)) * 300;
-            // そろったあとは、文字がゆっくり波打つ
-            float wave = MathF.Sin((time * 2.2f) - (i * 0.7f)) * 3 * Ease.Span(intro, 1.6f, 2.2f);
-            var pos = topLeft + (new Vector2(src.X, -drop + wave) * scale);
+            var pos = topLeft + (new Vector2(lx, -drop) * scale);
             float la = alpha * Math.Min(1, k * 4);
-            g.Batch.Draw(logo, pos + new Vector2(10, 14 + (drop * 0.3f)), src, Color.Black * (0.55f * la * (1 - (drop / 300f))), 0, Vector2.Zero, scale, SpriteEffects.None, 0);
-            g.Batch.Draw(logo, pos, src, Color.White * la, 0, Vector2.Zero, scale, SpriteEffects.None, 0);
+            g.Batch.Draw(tex, pos + new Vector2(10, 14 + (drop * 0.3f)), null, Color.Black * (0.55f * la * (1 - (drop / 300f))), 0, Vector2.Zero, scale, SpriteEffects.None, 0);
+            g.Batch.Draw(tex, pos, null, Color.White * la, 0, Vector2.Zero, scale, SpriteEffects.None, 0);
         }
         g.Batch.End();
 

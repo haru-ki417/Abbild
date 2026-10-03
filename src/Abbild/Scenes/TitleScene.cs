@@ -6,7 +6,8 @@ using Microsoft.Xna.Framework;
 
 namespace Abbild.Scenes;
 
-public sealed class TitleScene(Services s) : Scene(s)
+/// <summary>タイトル。quick なら（設定やクレジットから戻ったとき）出てくる演出を飛ばす。</summary>
+public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
 {
     private readonly Menu _menu = new() { RowHeight = 70, FontSize = 42 };
     private readonly Menu _confirm = new() { RowHeight = 64, FontSize = 40 };
@@ -45,7 +46,7 @@ public sealed class TitleScene(Services s) : Scene(s)
     private static Rectangle ConfirmArea => new(Gfx.Width / 2 - 300, 640, 600, 128);
 
     /// <summary>出てからの演出の時間。決定ボタンで最後まで飛ばせる。</summary>
-    private float _intro;
+    private float _intro = quick ? MenuAt + 0.5f : 0f;
     private int _landed;
 
     private const float MenuAt = 1.35f;
@@ -96,7 +97,7 @@ public sealed class TitleScene(Services s) : Scene(s)
                 S.Game.Scenes.Go(new CreditsScene(S, "howto.txt", "あそびかた"));
                 break;
             case 3:
-                S.Game.Scenes.Go(new SettingsScene(S, () => new TitleScene(S)));
+                S.Game.Scenes.Go(new SettingsScene(S, () => new TitleScene(S, quick: true)));
                 break;
             case 4:
                 S.Game.Scenes.Go(new CreditsScene(S));
