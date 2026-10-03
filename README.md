@@ -94,7 +94,7 @@ dotnet publish src/Abbild -c Release -r win-x64 --self-contained -o publish/Abbi
 | ふつう | 約 5 割 |
 | きびしい | 1 割未満（成功率 9 割の人で約 5 割） |
 
-セーブ・設定は `%APPDATA%\Abbild` に保存されます。
+セーブ・設定は `%APPDATA%\Abbild` に保存されます。冒険の書は 3 冊（`adventure1.json`〜`adventure3.json`）で、前の版の `adventure.json` は最初に起動したときに 1 冊目へ移ります。
 
 ## 素材と権利
 

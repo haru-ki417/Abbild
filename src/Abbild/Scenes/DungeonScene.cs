@@ -648,7 +648,7 @@ public sealed partial class DungeonScene : Scene
             _recordedWins = _run.BattlesWon;
             if (rec.FastestClearSeconds <= 0 || _run.PlaySeconds < rec.FastestClearSeconds) rec.FastestClearSeconds = _run.PlaySeconds;
             S.SaveRecords();
-            try { S.Store.DeleteSave(); }
+            try { S.Store.DeleteSave(_run.Slot); }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
             S.Game.Scenes.Go(new StoryScene(S, StoryScene.Epilogue, "final", "ending", () => new EndingScene(S, _run)), 1.5f);

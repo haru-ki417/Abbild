@@ -9,7 +9,7 @@ namespace Abbild.Scenes;
 public sealed class SettingsScene : Scene
 {
     private readonly Func<Scene> _back;
-    private readonly Menu _menu = new() { RowHeight = 62, FontSize = 36, VisibleRows = 12, Wrap = true };
+    private readonly Menu _menu = new() { RowHeight = 58, FontSize = 36, VisibleRows = 13, Wrap = true };
     private string[] _ports = [];
     private bool _mainDirty;
     private bool _weatherDirty;
@@ -20,7 +20,12 @@ public sealed class SettingsScene : Scene
         _menu.OnAdjust = Adjust;
     }
 
-    private enum Row { Bgm, Se, Screen, TextSpeed, UseController, Port, ControllerSound, Excite, WeatherPort, Reconnect, Sensors, Back }
+    private enum Row { Bgm, Se, Screen, TextSpeed, UseController, Port, ControllerSound, Excite, WeatherPort, Reconnect, Sensors, ResetRecords, Back }
+
+    private readonly Menu _yesNo = new() { RowHeight = 62, FontSize = 36 };
+    private bool _asking;
+    private float _askT;
+    private float _doneT = -1;
 
     public override void Enter()
     {
@@ -45,6 +50,7 @@ public sealed class SettingsScene : Scene
             new("天気モジュール（ESP）", true, st.WeatherPort ?? "使わない", "外の天気をゲームに反映する（任意）。← → で選んで、決定で接続します"),
             new("接続しなおす", st.UseController, "", S.Controller.Link.Message),
             new("センサーの確認", true, "", "いま体の入力がどう読まれているかを見る"),
+            new("記録を消す", true, S.Records.BestFloor > 0 || S.Records.Clears > 0 ? $"最高 B{S.Records.BestFloor}F・踏破 {S.Records.Clears} 回" : "記録なし", "最高到達・踏破回数などの記録を消す（冒険の書は「はじめから」の画面で 1 冊ずつ消せます）"),
             new("もどる"),
         ], keep);
     }
@@ -110,8 +116,36 @@ public sealed class SettingsScene : Scene
         Refresh();
     }
 
+    private static Rectangle AskMenuRect => new(Gfx.Width / 2 - 240, 560, 480, 62 * 2);
+
     protected override void Update(float dt)
     {
+        if (_doneT >= 0) _doneT += dt;
+        if (_asking)
+        {
+            _askT += dt;
+            if (_askT < 0.22f) return;
+            int k = _yesNo.Update(S, AskMenuRect);
+            if (In.Pressed(Act.Cancel) || k == 0)
+            {
+                if (k != 0) S.Cue(Cue.Cancel);
+                _asking = false;
+            }
+            else if (k == 1)
+            {
+                try
+                {
+                    S.Store.ResetRecords();
+                    S.Records = S.Store.LoadRecords();
+                    _doneT = 0;
+                }
+                catch (IOException) { S.Cue(Cue.Buzzer); }
+                catch (UnauthorizedAccessException) { S.Cue(Cue.Buzzer); }
+                _asking = false;
+                Refresh();
+            }
+            return;
+        }
         int i = _menu.Update(S, MenuRect);
         if (i >= 0)
         {
@@ -131,6 +165,11 @@ public sealed class SettingsScene : Scene
                     _weatherDirty = false;
                     break;
                 case Row.Sensors: S.Game.Scenes.Go(new SensorTestScene(S, () => this)); break;
+                case Row.ResetRecords:
+                    _asking = true;
+                    _askT = 0;
+                    _yesNo.SetItems([new("いいえ"), new("はい（消す）")], keepIndex: false);
+                    break;
                 case Row.Back: Back(); break;
                 case Row.TextSpeed: Adjust(i, 1); break;
             }
@@ -149,7 +188,7 @@ public sealed class SettingsScene : Scene
         S.Game.Scenes.Go(_back());
     }
 
-    private static Rectangle MenuRect => new(380, 150, 1160, 62 * 12);
+    private static Rectangle MenuRect => new(380, 150, 1160, 58 * 13);
 
     public override void Draw()
     {
@@ -165,6 +204,26 @@ public sealed class SettingsScene : Scene
         var link = S.Controller.Link;
         g.TextCentered($"コントローラー：{link.Message}", new Vector2(Gfx.Width / 2f, 1020), 26, S.Controller.Active ? Palette.Good : Palette.Dim);
         Hints.Draw(g, In, ("←→", "変更"), Hints.Confirm(In), Hints.Cancel(In));
+        if (_doneT is >= 0 and < 2f)
+        {
+            float k = Math.Min(1, _doneT / 0.2f) * Math.Min(1, (2f - _doneT) / 0.4f);
+            g.TextFx("記録を消しました", new Vector2(Gfx.Width / 2f, 76 + 56), 34, Palette.Good * k);
+        }
+        if (_asking)
+        {
+            g.Rect(new Rectangle(0, 0, Gfx.Width, Gfx.Height), Color.Black * 0.5f);
+            var r = new Rectangle(Gfx.Width / 2 - 440, 360, 880, 360);
+            float open = _askT / 0.22f;
+            g.Window(open < 1 ? Gfx.Opening(r, open) : r, 1f, border: Palette.Bad);
+            if (open >= 1)
+            {
+                g.TextCentered("記録を消しますか？", new Vector2(r.Center.X, r.Y + 64), 40, new Color(255, 160, 150));
+                g.TextCentered("最高到達・踏破回数・ゲームオーバーの回数などが 0 にもどります。", new Vector2(r.Center.X, r.Y + 124), 28, Palette.Text);
+                g.TextCentered("冒険の書（セーブデータ）は消えません。", new Vector2(r.Center.X, r.Y + 166), 28, Palette.Dim);
+                _yesNo.Reveal = _askT - 0.22f;
+                _yesNo.Draw(g, AskMenuRect, Time);
+            }
+        }
         g.Batch.End();
     }
 }

@@ -13,7 +13,7 @@ public sealed class GameOverScene(Services s, RunState run) : Scene(s)
     {
         S.Audio.PlayBgm("gameover", loop: false);
         S.Controller.Led(LedColor.Red);
-        bool hasSave = S.Store.HasSave;
+        bool hasSave = S.Store.HasSave(run.Slot);
         _menu.SetItems([new("記録した階からやり直す", hasSave, hasSave ? $"B{run.Floor}F" : ""), new("タイトルへ")], keepIndex: false);
         if (!hasSave) _menu.Index = 1;
     }
@@ -61,8 +61,8 @@ public sealed class GameOverScene(Services s, RunState run) : Scene(s)
         int i = _menu.Update(S, MenuRect);
         if (i == 0)
         {
-            var save = S.Store.LoadSave();
-            if (save is not null) S.Game.Scenes.Go(new DungeonScene(S, save.ToRun(), fromSave: true), 0.8f);
+            var again = S.Store.LoadRun(run.Slot);
+            if (again is not null) S.Game.Scenes.Go(new DungeonScene(S, again, fromSave: true), 0.8f);
             else S.Game.Scenes.Go(new TitleScene(S), 0.8f);
         }
         else if (i == 1)

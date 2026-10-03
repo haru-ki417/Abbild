@@ -149,6 +149,30 @@ internal sealed class Automation(Services s, SceneManager scenes, LaunchOptions 
         yield return new Frames(150);
         yield return new Snap("01-title");
 
+        // 冒険の書（1 冊目と 3 冊目に記録がある状態）
+        yield return new Do(() =>
+        {
+            var a = NewRun(12, 8, Difficulty.Normal, 3);
+            a.Slot = 1;
+            a.PlaySeconds = 1830;
+            s.Store.Save(a);
+            var c = NewRun(41, 64, Difficulty.Hard, 5);
+            c.Slot = 3;
+            c.PlaySeconds = 9120;
+            c.BattlesWon = 63;
+            s.Store.Save(c);
+        });
+        var slots = new SlotScene(s, continueMode: true);
+        foreach (var w in Go(slots)) yield return w;
+        yield return new Frames(50);
+        yield return new Snap("01a-slots");
+        yield return new Frames(30, i => i == 0 ? [Act.Confirm] : []);
+        yield return new Snap("01b-slot-actions");
+        yield return new Frames(30, i => i == 0 ? [Act.Down] : i == 6 ? [Act.Down] : i == 12 ? [Act.Confirm] : []);
+        yield return new Snap("01c-slot-delete");
+        yield return new Frames(20, i => i == 0 ? [Act.Down] : i == 4 ? [Act.Confirm] : []);
+        yield return new Snap("01d-slot-deleted");
+
         var create = new CreateScene(s);
         foreach (var w in Go(create)) yield return w;
         yield return new Do(() => s.Input.InjectText("ハルキ"));

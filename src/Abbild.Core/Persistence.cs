@@ -182,25 +182,99 @@ public sealed class SaveStore(string directory)
         return Path.Combine(root, "Abbild");
     }
 
-    public bool HasSave
+    /// <summary>冒険の書の数。</summary>
+    public const int SlotCount = 3;
+
+    private static string SlotFile(int slot) => $"adventure{slot}.json";
+
+    private static void CheckSlot(int slot)
     {
-        get
+        if (slot < 1 || slot > SlotCount) throw new ArgumentOutOfRangeException(nameof(slot), slot, $"冒険の書は 1〜{SlotCount} です。");
+    }
+
+    /// <summary>前の版（冒険の書が 1 つだけ）の adventure.json を、1 冊目に移す。</summary>
+    private void MigrateLegacy()
+    {
+        try
         {
-            try { return File.Exists(PathOf("adventure.json")); }
-            catch (IOException) { return false; }
-            catch (UnauthorizedAccessException) { return false; }
+            string old = PathOf("adventure.json");
+            if (!File.Exists(old)) return;
+            string first = PathOf(SlotFile(1));
+            if (File.Exists(first)) return;
+            File.Move(old, first);
         }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
-    public SaveData? LoadSave() => Read<SaveData>("adventure.json");
-
-    public void Save(RunState run) => Write("adventure.json", SaveData.From(run));
-
-    public void DeleteSave()
+    public bool HasSave(int slot)
     {
-        string p = PathOf("adventure.json");
-        if (File.Exists(p)) File.Delete(p);
+        CheckSlot(slot);
+        MigrateLegacy();
+        try { return File.Exists(PathOf(SlotFile(slot))); }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
+
+    /// <summary>どれか 1 冊でも記録があるか。</summary>
+    public bool HasAnySave => Enumerable.Range(1, SlotCount).Any(HasSave);
+
+    public SaveData? LoadSave(int slot)
+    {
+        CheckSlot(slot);
+        MigrateLegacy();
+        return Read<SaveData>(SlotFile(slot));
+    }
+
+    /// <summary>冒険を読み出す（どの冊かも覚えておく）。なければ null。</summary>
+    public RunState? LoadRun(int slot)
+    {
+        var data = LoadSave(slot);
+        if (data is null) return null;
+        var run = data.ToRun();
+        run.Slot = slot;
+        return run;
+    }
+
+    /// <summary>全部の冊を読む（[0] が 1 冊目。ない冊は null）。</summary>
+    public IReadOnlyList<SaveData?> LoadAll() => Enumerable.Range(1, SlotCount).Select(LoadSave).ToList();
+
+    /// <summary>いちばん新しく記録した冊（なければ 0）。</summary>
+    public int LatestSlot()
+    {
+        var all = LoadAll();
+        int best = 0;
+        DateTime t = DateTime.MinValue;
+        for (int i = 0; i < all.Count; i++)
+        {
+            if (all[i] is { } d && d.SavedAt >= t)
+            {
+                t = d.SavedAt;
+                best = i + 1;
+            }
+        }
+        return best;
+    }
+
+    public void Save(RunState run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        CheckSlot(run.Slot);
+        Write(SlotFile(run.Slot), SaveData.From(run));
+    }
+
+    public void DeleteSave(int slot)
+    {
+        CheckSlot(slot);
+        MigrateLegacy();
+        string p = PathOf(SlotFile(slot));
+        if (File.Exists(p)) File.Delete(p);
+        string broken = p + ".broken";
+        if (File.Exists(broken)) File.Delete(broken);
+    }
+
+    /// <summary>記録（最高到達・踏破回数など）を消す。</summary>
+    public void ResetRecords() => Write("records.json", new Records());
 
     public Settings LoadSettings()
     {

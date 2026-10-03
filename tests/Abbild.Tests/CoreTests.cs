@@ -317,9 +317,12 @@ public class SaveTests
             var run = RunState.Start(hero, Difficulty.Hard, 77);
             run.Floor = 37;
             run.PlaySeconds = 1234.5;
+            run.Slot = 2;
             store.Save(run);
-            Assert.True(store.HasSave);
-            var back = store.LoadSave()!.ToRun();
+            Assert.True(store.HasSave(2));
+            Assert.False(store.HasSave(1));
+            var back = store.LoadRun(2)!;
+            Assert.Equal(2, back.Slot);
             Assert.Equal(run.Floor, back.Floor);
             Assert.Equal(Difficulty.Hard, back.Difficulty);
             Assert.Equal(hero.Name, back.Hero.Name);
@@ -327,8 +330,87 @@ public class SaveTests
             Assert.Equal(hero.MaxHp, back.Hero.MaxHp);
             Assert.Equal(2, back.Hero.Inventory.CountOf(new Item("dynamite", "legend")));
             Assert.Equal(run.Rng.NextULong(), back.Rng.NextULong());
-            store.DeleteSave();
-            Assert.False(store.HasSave);
+            store.DeleteSave(2);
+            Assert.False(store.HasSave(2));
+            Assert.False(store.HasAnySave);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void 冒険の書は三冊べつべつに記録でき_一冊だけ消せる()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "abbild-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new SaveStore(dir);
+            for (int slot = 1; slot <= SaveStore.SlotCount; slot++)
+            {
+                var hero = Hero.Create($"勇者{slot}", Gender.Male, StartingStats.Default, Difficulty.Normal);
+                var run = RunState.Start(hero, Difficulty.Normal, (ulong)slot);
+                run.Floor = slot * 10;
+                run.Slot = slot;
+                store.Save(run);
+            }
+            var all = store.LoadAll();
+            Assert.Equal(SaveStore.SlotCount, all.Count);
+            Assert.Equal([10, 20, 30], all.Select(d => d!.Floor).ToArray());
+            Assert.Equal("勇者2", all[1]!.Hero.Name);
+            Assert.Equal(3, store.LatestSlot());
+
+            store.DeleteSave(2);
+            Assert.True(store.HasSave(1));
+            Assert.False(store.HasSave(2));
+            Assert.True(store.HasSave(3));
+            Assert.Null(store.LoadAll()[1]);
+            Assert.Throws<ArgumentOutOfRangeException>(() => store.HasSave(0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => store.HasSave(SaveStore.SlotCount + 1));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void 前の版の冒険の書は一冊目として読める()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "abbild-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var hero = Hero.Create("むかし", Gender.Female, StartingStats.Default, Difficulty.Easy);
+            var run = RunState.Start(hero, Difficulty.Easy, 5);
+            run.Floor = 42;
+            var json = System.Text.Json.JsonSerializer.Serialize(SaveData.From(run), new System.Text.Json.JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } });
+            File.WriteAllText(Path.Combine(dir, "adventure.json"), json);
+            var store = new SaveStore(dir);
+            Assert.True(store.HasSave(1));
+            Assert.Equal(42, store.LoadRun(1)!.Floor);
+            Assert.False(File.Exists(Path.Combine(dir, "adventure.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void 記録を消すと最初の状態にもどる()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "abbild-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new SaveStore(dir);
+            store.SaveRecords(new Records { BestFloor = 55, Clears = 2, GameOvers = 9 });
+            Assert.Equal(55, store.LoadRecords().BestFloor);
+            store.ResetRecords();
+            var r = store.LoadRecords();
+            Assert.Equal(0, r.BestFloor);
+            Assert.Equal(0, r.Clears);
         }
         finally
         {

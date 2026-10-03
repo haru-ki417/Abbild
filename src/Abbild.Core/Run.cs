@@ -32,6 +32,9 @@ public sealed class RunState
     public double PlaySeconds { get; set; }
     public bool Cleared { get; set; }
 
+    /// <summary>どの冒険の書（1〜SaveStore.SlotCount）に記録するか。</summary>
+    public int Slot { get; set; } = 1;
+
     public static RunState Start(Hero hero, Difficulty difficulty, ulong seed)
     {
         var run = new RunState { Hero = hero, Difficulty = difficulty, Rng = new GameRandom(seed) };

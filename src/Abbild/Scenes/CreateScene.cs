@@ -7,7 +7,8 @@ using Microsoft.Xna.Framework.Input;
 namespace Abbild.Scenes;
 
 /// <summary>名前・見た目・難しさを選び、体を使った測定で最初の能力を決める。</summary>
-public sealed class CreateScene(Services s) : Scene(s)
+/// <summary>slot は記録する冒険の書（1〜SaveStore.SlotCount）。</summary>
+public sealed class CreateScene(Services s, int slot = 1) : Scene(s)
 {
     private enum Step { Name, Gender, Difficulty, TrialChoice, Trials, Result }
 
@@ -198,7 +199,7 @@ public sealed class CreateScene(Services s) : Scene(s)
         if (In.Pressed(Act.Cancel))
         {
             if (_name.Length > 0) { _name = _name[..^1]; S.Cue(Cue.Cancel); }
-            else { S.Cue(Cue.Cancel); S.Game.Scenes.Go(new TitleScene(S, quick: true)); }
+            else { S.Cue(Cue.Cancel); S.Game.Scenes.Go(new SlotScene(S, continueMode: false, select: slot)); }
         }
     }
 
@@ -303,6 +304,7 @@ public sealed class CreateScene(Services s) : Scene(s)
     {
         var hero = Hero.Create(_name, _gender, _stats, _difficulty);
         var run = RunState.Start(hero, _difficulty, (ulong)DateTime.Now.Ticks);
+        run.Slot = slot;
         S.Game.Scenes.Go(new StoryScene(S, StoryScene.Prologue, "corridor", null, () => new DungeonScene(S, run, fromSave: false)), 0.6f);
     }
 

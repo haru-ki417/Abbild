@@ -10,15 +10,14 @@ namespace Abbild.Scenes;
 public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
 {
     private readonly Menu _menu = new() { RowHeight = 70, FontSize = 42 };
-    private readonly Menu _confirm = new() { RowHeight = 64, FontSize = 40 };
     private SaveData? _save;
-    private bool _asking;
 
     public override void Enter()
     {
         S.Audio.PlayBgm("title");
         Logo.Get(G);
-        _save = S.Store.HasSave ? SafeLoad() : null;
+        // いちばん新しく記録した冒険の書を、「つづきから」の横に出す
+        _save = SafeLoad();
         string cont = _save is null ? "" : $"B{_save.Floor}F  Lv{_save.Hero.Level}";
         _menu.SetItems(
         [
@@ -30,20 +29,21 @@ public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
             new("おわる"),
         ], keepIndex: false);
         if (_save is not null) _menu.Index = 1;
-        _confirm.SetItems([new("いいえ"), new("はい（上書きする）")], keepIndex: false);
-        _asking = false;
     }
 
     private SaveData? SafeLoad()
     {
-        try { return S.Store.LoadSave(); }
+        try
+        {
+            int latest = S.Store.LatestSlot();
+            return latest > 0 ? S.Store.LoadSave(latest) : null;
+        }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
     }
 
     private static Rectangle MenuArea => new(Gfx.Width / 2 - 260, 500, 520, 70 * 6);
 
-    private static Rectangle ConfirmArea => new(Gfx.Width / 2 - 300, 640, 600, 128);
 
     /// <summary>出てからの演出の時間。決定ボタンで最後まで飛ばせる。</summary>
     private float _intro = quick ? MenuAt + 0.5f : 0f;
@@ -73,25 +73,16 @@ public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
             }
             _landed++;
         }
-        if (_asking)
-        {
-            int c = _confirm.Update(S, ConfirmArea);
-            if (In.Pressed(Act.Cancel)) { S.Cue(Cue.Cancel); _asking = false; }
-            else if (c == 0) _asking = false;
-            else if (c == 1) S.Game.Scenes.Go(new CreateScene(S));
-            return;
-        }
         // メニューが見えるまでは選べない（前の画面の連打で選んでしまわないように）
         if (_intro < MenuAt) return;
         int i = _menu.Update(S, MenuArea);
         switch (i)
         {
             case 0:
-                if (_save is not null) { _asking = true; _confirm.Index = 0; }
-                else S.Game.Scenes.Go(new CreateScene(S));
+                S.Game.Scenes.Go(new SlotScene(S, continueMode: false));
                 break;
             case 1 when _save is not null:
-                S.Game.Scenes.Go(new DungeonScene(S, _save.ToRun(), fromSave: true));
+                S.Game.Scenes.Go(new SlotScene(S, continueMode: true));
                 break;
             case 2:
                 S.Game.Scenes.Go(new CreditsScene(S, "howto.txt", "あそびかた"));
@@ -199,14 +190,6 @@ public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
         g.Rect(lx0 - 6, sy - 6, 10, 10, Palette.Gold * appear);
         g.Rect(lx1 - 4, sy - 6, 10, 10, Palette.Gold * appear);
 
-        if (_asking)
-        {
-            var r = new Rectangle(Gfx.Width / 2 - 420, 520, 840, 300);
-            g.Window(r);
-            g.TextCentered("冒険の書を上書きして、はじめから始めますか？", new Vector2(r.Center.X, r.Y + 64), 36, Color.White);
-            _confirm.Draw(g, ConfirmArea, Time);
-        }
-        else
         {
             var mr = MenuArea;
             var wr = new Rectangle(mr.X - 30, mr.Y - 24, mr.Width + 60, mr.Height + 48);
