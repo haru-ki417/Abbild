@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Abbild.Core/Abbild.Core.csproj" />
     <Project Path="src/Abbild/Abbild.csproj" />
+    <Project Path="src/Abbild.Web/Abbild.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Abbild.Tests/Abbild.Tests.csproj" />

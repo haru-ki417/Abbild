@@ -92,6 +92,11 @@ public sealed class AbbildGame : Game
 
     public void SetFullscreen(bool on)
     {
+        if (PlatformHooks.SetFullscreen is { } platform)
+        {
+            platform(on);
+            return;
+        }
         if (on)
         {
             var dm = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
@@ -108,7 +113,7 @@ public sealed class AbbildGame : Game
         _graphics.ApplyChanges();
     }
 
-    public bool IsFullscreen => _graphics.IsFullScreen;
+    public bool IsFullscreen => PlatformHooks.IsFullscreen?.Invoke() ?? _graphics.IsFullScreen;
 
     protected override void Update(GameTime gameTime)
     {
@@ -117,6 +122,7 @@ public sealed class AbbildGame : Game
         if (_automation is not null) dt = 1f / 60f;
         s.Input.SetViewport(_viewport);
         _automation?.BeforeUpdate(dt);
+        PlatformHooks.BeforeInput?.Invoke(s.Input);
         s.Input.Update(dt);
         if (s.Input.ToggleFullscreen)
         {
@@ -154,10 +160,20 @@ public sealed class AbbildGame : Game
         base.Draw(gameTime);
     }
 
+#if BLAZORGL
+    // ブラウザー版（KNI）では、終わるときの処理の形がちがう
+    protected override void OnExiting(EventArgs args)
+    {
+        _s?.Controller.Dispose();
+        _s?.Audio.Dispose();
+        base.OnExiting(args);
+    }
+#else
     protected override void OnExiting(object sender, ExitingEventArgs args)
     {
         _s?.Controller.Dispose();
         _s?.Audio.Dispose();
         base.OnExiting(sender, args);
     }
+#endif
 }

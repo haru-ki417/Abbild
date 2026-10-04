@@ -13,5 +13,17 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - run: dotnet build Abbild.slnx -c Release
-      - run: dotnet test --solution Abbild.slnx -c Release --no-build
+      - run: dotnet build src/Abbild -c Release
+      - run: dotnet build tests/Abbild.Tests -c Release
+      - run: dotnet test --project tests/Abbild.Tests -c Release --no-build
+
+  web:
+    # ブラウザー版（KNI + Blazor WebAssembly）がビルドできるかを確かめる
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet workload install wasm-tools
+      - run: dotnet build src/Abbild.Web -c Release

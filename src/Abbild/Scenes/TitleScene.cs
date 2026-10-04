@@ -26,7 +26,7 @@ public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
             new("あそびかた"),
             new("せってい"),
             new("クレジット"),
-            new("おわる"),
+            new("おわる", PlatformHooks.CanExit),
         ], keepIndex: false);
         if (_save is not null) _menu.Index = 1;
     }
@@ -93,7 +93,7 @@ public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
             case 4:
                 S.Game.Scenes.Go(new CreditsScene(S));
                 break;
-            case 5:
+            case 5 when PlatformHooks.CanExit:
                 S.Game.Exit();
                 break;
         }
@@ -210,7 +210,7 @@ public sealed class TitleScene(Services s, bool quick = false) : Scene(s)
         var link = S.Controller.Link;
         string ctl = S.Controller.Active
             ? $"♥ 自作コントローラー：{link.PortName} で接続中"
-            : link.State == LinkState.Searching ? "コントローラーを探しています…" : "キーボード・ゲームパッドで遊べます（自作コントローラーにも対応）";
+            : link.State == LinkState.Searching ? "コントローラーを探しています…" : PlatformHooks.TitleNote ?? "キーボード・ゲームパッドで遊べます（自作コントローラーにも対応）";
         g.Text(ctl, new Vector2(40, Gfx.Height - 56), 28, S.Controller.Active ? Palette.Good : Palette.Dim);
         if (S.Records.BestFloor > 0)
         {

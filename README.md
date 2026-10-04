@@ -3,6 +3,8 @@
 **体で遊ぶ、100 階層のダンジョン RPG。**
 心拍・振り・傾き・息で戦う自作コントローラーにも、ふつうのキーボード・ゲームパッドにも対応しています。
 
+**▶ ブラウザーで遊ぶ: https://haru-ki417.github.io/Abbild/** 　パソコンはキーボード・ゲームパッド、スマホ・タブレットは画面のボタンで遊べます（インストール不要）。
+
 ![タイトル](docs/screenshots/01-title.jpg)
 
 | 戦闘 | ボス |
@@ -43,6 +45,20 @@
 
 マウスでもメニューを選べます。
 
+## ブラウザー版
+
+https://haru-ki417.github.io/Abbild/ を開いて「はじめる」を押すだけで遊べます。Windows 版と **同じゲームのソース** を、MonoGame 互換の [KNI](https://github.com/kniEngine/kni)（WebGL・WebAudio）と Blazor WebAssembly で動かしています。
+
+![ブラウザー版（スマホ）](docs/screenshots/30-web-phone.jpg)
+
+- **操作**: キーボード・ゲームパッド（ブラウザーの Gamepad API）・マウスは Windows 版と同じ。スマホ・タブレットでは十字キー（斜めも可）と「決定・もどる・息・メニュー」のボタンを画面に出す（右上のボタンで出し入れ）。横向き・全画面にして遊ぶ
+- **セーブ**: 冒険の書と設定は、そのブラウザー（localStorage）にだけ残る。ゲームは Windows 版と同じくファイルに書き、変わったものを 1 秒ごとに写す
+- **BGM はなし**: OpenTracks の規約で音源を公開の場所に置けないため、ブラウザー版には入れていない（効果音はプログラムで合成しているので鳴る）
+- **自作コントローラーは使えない**: ブラウザーからはシリアル通信のポートを開けないため。体の入力は、キーボードなどの代わりの操作（上の「操作」の表）で行う
+- 絵とフォントは最初に読み込み、一度読んだらオフラインでも遊べる（Service Worker）
+
+Windows 版との違いは、`src/Abbild.Web/Platform/SerialLink.cs`（シリアル通信の置きかえ）と、`#if BLAZORGL` の 2 か所（画像の透明度のかけ方・終了の処理）、`Engine/PlatformHooks.cs`（画面のボタン・全画面の入口）だけです。
+
 ## 自作コントローラー（任意）
 
 `firmware/AbbildController/AbbildController.ino` が対応するスケッチです（部品と配線は [firmware/README.md](firmware/README.md)）。
@@ -63,6 +79,7 @@ src/Abbild/        MonoGame（DesktopGL）の画面
   Ui/ChallengeView.cs  ミニゲームの表示
   Controller/        シリアル通信・体の入力をまとめる
   Engine/            描画・音（BGM はその場で読み出し、効果音は合成）・入力
+src/Abbild.Web/     ブラウザー版（同じゲームのソースを KNI + Blazor WebAssembly で動かす）
 tests/Abbild.Tests/ 単体テストと、自動プレイヤーによる難しさの確認
 tools/prepare_assets.py  元の素材から画像・音を作る（透過・縮小・Ogg 化）
 tools/pack_bgm.py  BGM（Ogg）を Content/bgm.dat にまとめる
@@ -76,6 +93,9 @@ dotnet build Abbild.slnx
 dotnet test --solution Abbild.slnx
 dotnet run --project src/Abbild                # 遊ぶ
 dotnet run --project src/Abbild -- --windowed  # ウィンドウで起動
+# ブラウザー版（out/wwwroot をそのまま置けば動く。wasm-tools が必要）
+dotnet workload install wasm-tools
+dotnet publish src/Abbild.Web -c Release -o out
 # 配布用（Windows、.NET のインストール不要）
 dotnet publish src/Abbild -c Release -r win-x64 --self-contained -o publish/Abbild
 ```

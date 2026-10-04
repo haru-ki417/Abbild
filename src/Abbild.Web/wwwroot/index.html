@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Abbild ～ 古の迷宮と勇者の魂 ～</title>
+    <meta name="description" content="体で遊ぶ、100 階層のダンジョン RPG。ブラウザー版はキーボード・ゲームパッド・画面のボタン（スマホ・タブレット）で遊べます。" />
+    <meta name="theme-color" content="#0b0d18" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <base href="/Abbild/" />
+    <link rel="icon" type="image/png" href="icons/icon-64.png" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="css/app.css" />
+    <script type="importmap"></script>
+</head>
+<body>
+    <div id="app"></div>
+
+    <!-- 読み込み中・はじめる -->
+    <div id="loading">
+        <img class="load-icon" src="icons/icon-192.png" alt="" />
+        <div class="load-title">Abbild</div>
+        <div class="load-sub">～ 古の迷宮と勇者の魂 ～</div>
+        <div class="load-bar"><span id="load-bar"></span></div>
+        <div class="load-text" id="load-text">ゲームを読み込んでいます…</div>
+        <button id="start" class="start" hidden>はじめる</button>
+        <div class="load-help">
+            <div class="help-keys"><b>キーボード</b>　↑↓←→ / WASD で選ぶ・Z / Enter で決定・X で戻る・C で息・Esc でメニュー</div>
+            <div class="help-keys"><b>ゲームパッド</b>　十字キー・A 決定・B 戻る・Y 息・START メニュー</div>
+            <div class="help-keys"><b>スマホ・タブレット</b>　画面の十字キーとボタン（横向きがおすすめ）</div>
+            <div class="note">セーブはこのブラウザーの中だけに残ります。BGM はブラウザー版には入っていません（効果音はあります）。</div>
+        </div>
+        <noscript><p>このゲームを遊ぶには JavaScript を有効にしてください。</p></noscript>
+    </div>
+
+    <!-- 画面のボタン（タッチの端末） -->
+    <div id="touch-ui" aria-hidden="true">
+        <div id="pad" class="pad"><i class="u"></i><i class="d"></i><i class="l"></i><i class="r"></i></div>
+        <div class="buttons">
+            <button class="tbtn menu" data-act="menu">メニュー</button>
+            <button class="tbtn breath" data-act="breath">息</button>
+            <button class="tbtn cancel" data-act="cancel">もどる</button>
+            <button class="tbtn confirm" data-act="confirm">決定</button>
+        </div>
+    </div>
+    <button id="touch-toggle" class="touch-toggle" title="画面のボタンを出す・隠す">⌨︎</button>
+
+    <div id="blazor-error-ui" role="alert">
+        問題が起きました。<a href="" class="reload">読み込み直す</a>
+        <a class="dismiss" aria-label="閉じる">✕</a>
+    </div>
+
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js" autostart="false"></script>
+    <script src="js/boot.js"></script>
+    <script src="_content/nkast.Wasm.JSInterop/js/JSObject.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Window.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Document.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Navigator.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Gamepad.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Media.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.XHR/js/XHR.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Canvas/js/Canvas.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Canvas/js/CanvasGLContext.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.Audio/js/Audio.10.0.3.js"></script>
+    <script src="_content/nkast.Wasm.XR/js/XR.10.0.3.js"></script>
+    <script src="js/host.js"></script>
+</body>
+</html>

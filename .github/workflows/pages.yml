@@ -1,0 +1,52 @@
+# ブラウザー版を作って GitHub Pages で公開する。
+# 毎フレームの計算を速くするため WebAssembly にあらかじめ翻訳（AOT）し、ダウンロードを小さくするため .gz も置く。
+# BGM（bgm.dat・Ogg）は OpenTracks の規約で公開の場所に置けないので、入っていたら止める。
+name: Web
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install WebAssembly tools
+        run: dotnet workload install wasm-tools
+
+      - name: Test (Core)
+        run: dotnet test --project tests/Abbild.Tests -c Release
+
+      - name: Publish
+        run: dotnet publish src/Abbild.Web -c Release -o out
+
+      - name: Prepare site
+        run: |
+          if find out/wwwroot \( -iname 'bgm.dat*' -o -iname '*.ogg*' -o -iname '*.wav*' -o -iname '*.mp3*' \) | grep -q .; then echo "BGM が紛れ込んでいます" && exit 1; fi
+          cp out/wwwroot/index.html out/wwwroot/404.html
+          touch out/wwwroot/.nojekyll
+
+      # 公開用の枝（gh-pages）に、できあがったものだけを置く（GitHub Pages はこの枝から公開する）
+      - name: Deploy to gh-pages
+        run: |
+          cd out/wwwroot
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Web 版を公開（${GITHUB_SHA::7}）"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages

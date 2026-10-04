@@ -1,0 +1,50 @@
+@* ブラウザー版の入口。ゲームの絵とフォントをブラウザーの中のファイルに置いてから、Windows 版と同じゲームを動かす。
+   画面のボタン（スマホ・タブレット）と、セーブをこの端末に残すのは host.js *@
+@implements IDisposable
+@inject IJSRuntime Js
+
+<div id="canvasHolder">
+    <canvas id="theCanvas" tabindex="0"></canvas>
+</div>
+
+@code {
+    private Microsoft.Xna.Framework.Game? game;
+    private DotNetObjectReference<App>? self;
+    private readonly GameHost host = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        self = DotNetObjectReference.Create(this);
+        await Js.InvokeVoidAsync("abbildHost.boot", self, GameHost.SaveDirectory);
+    }
+
+    /// <summary>ゲームの絵・フォントを 1 つ受け取って、ブラウザーの中のファイルに置く</summary>
+    [JSInvokable] public void PutContent(string path, byte[] bytes) => GameHost.PutContent(path, bytes);
+
+    /// <summary>この端末に残してあったセーブを戻す</summary>
+    [JSInvokable] public void PutSave(string name, string text) => GameHost.PutSave(name, text);
+
+    /// <summary>画面のボタンで押している操作（Act の順のビット）</summary>
+    [JSInvokable] public void SetTouch(int mask) => host.TouchMask = mask;
+
+    /// <summary>毎フレーム（requestAnimationFrame から呼ばれる）</summary>
+    [JSInvokable]
+    public void TickDotNet()
+    {
+        if (game is null)
+        {
+            host.Attach((IJSInProcessRuntime)Js);
+            game = new Abbild.AbbildGame(new Abbild.LaunchOptions(null, false, null, false, 0));
+            game.Run();
+        }
+        game.Tick();
+        host.AfterTick();
+    }
+
+    public void Dispose()
+    {
+        game?.Dispose();
+        self?.Dispose();
+    }
+}

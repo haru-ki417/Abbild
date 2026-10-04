@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!--
+    ブラウザー版。Windows 版（MonoGame）と同じゲームのソースを、MonoGame 互換の KNI（WebGL・WebAudio）で動かす。
+    自作コントローラー（シリアル通信）はブラウザーでは使えないので、その部分だけ置きかえる。BGM（bgm.dat）は入れない。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Abbild.Web</RootNamespace>
+    <AssemblyName>Abbild.Web</AssemblyName>
+    <DefineConstants>$(DefineConstants);BLAZORGL</DefineConstants>
+    <KniPlatform>BlazorGL</KniPlatform>
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+    <BlazorWebAssemblyLoadAllGlobalizationData>false</BlazorWebAssemblyLoadAllGlobalizationData>
+    <WasmEnableWebcil>true</WasmEnableWebcil>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- 共有するゲームのソースは Windows 版のまま（警告の扱いは Windows 版でそろえている） -->
+    <NoWarn>$(NoWarn);CA1416;CS1998</NoWarn>
+  </PropertyGroup>
+
+  <!-- 公開するときは、毎フレームの計算を速くするため WebAssembly にあらかじめ翻訳する（AOT） -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <WasmStripILAfterAOT>true</WasmStripILAfterAOT>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.12" PrivateAssets="all" />
+    <PackageReference Include="nkast.Xna.Framework" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Devices" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Storage" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.XR" Version="4.3.9001" />
+    <PackageReference Include="nkast.Kni.Platform.Blazor.GL" Version="4.3.9001" />
+    <PackageReference Include="FontStashSharp.Kni" Version="1.6.1" />
+    <PackageReference Include="NVorbis" Version="0.10.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Abbild.Core\Abbild.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Windows 版と同じゲームのソース（起動の入口と、シリアル通信だけは除く） -->
+  <ItemGroup>
+    <Compile Include="..\Abbild\**\*.cs" Exclude="..\Abbild\Program.cs;..\Abbild\Controller\SerialLink.cs;..\Abbild\obj\**;..\Abbild\bin\**" LinkBase="Game" />
+  </ItemGroup>
+
+  <!-- ゲームの絵・フォント（BGM は入れない）。公開するときに wwwroot/Content に置き、一覧を作る -->
+  <ItemGroup>
+    <GameContent Include="..\Abbild\Content\**\*" Exclude="..\Abbild\Content\bgm.dat;..\Abbild\Content\**\*.ogg" />
+  </ItemGroup>
+  <Target Name="CopyGameContent" AfterTargets="Publish">
+    <Copy SourceFiles="@(GameContent)" DestinationFiles="@(GameContent->'$(PublishDir)wwwroot/Content/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <WriteLinesToFile File="$(PublishDir)wwwroot/Content/manifest.txt" Lines="@(GameContent->'%(RecursiveDir)%(Filename)%(Extension)')" Overwrite="true" />
+  </Target>
+
+  <ItemGroup>
+    <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js" />
+  </ItemGroup>
+
+</Project>

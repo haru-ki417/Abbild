@@ -42,10 +42,31 @@ public sealed class Assets(GraphicsDevice device, string contentRoot)
         if (_textures.TryGetValue(relative, out var t)) return t;
         string path = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
         using var fs = File.OpenRead(path);
+#if BLAZORGL
+        // ブラウザー版（KNI）は読み込みのときに透明度をかけられないので、読んでからかける
+        t = Texture2D.FromStream(device, fs);
+        PremultiplyAlpha(t);
+#else
         t = Texture2D.FromStream(device, fs, DefaultColorProcessors.PremultiplyAlpha);
+#endif
         _textures[relative] = t;
         return t;
     }
+
+#if BLAZORGL
+    private static void PremultiplyAlpha(Texture2D t)
+    {
+        var data = new Color[t.Width * t.Height];
+        t.GetData(data);
+        for (int i = 0; i < data.Length; i++)
+        {
+            var c = data[i];
+            if (c.A == 255) continue;
+            data[i] = new Color((byte)(c.R * c.A / 255), (byte)(c.G * c.A / 255), (byte)(c.B * c.A / 255), c.A);
+        }
+        t.SetData(data);
+    }
+#endif
 
     public Texture2D Background(string id) => Texture($"bg/{id}.jpg");
 
