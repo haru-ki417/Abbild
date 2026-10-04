@@ -12,7 +12,7 @@
 | BGM 4 曲（タイトル・迷宮・エンディング・ゲームオーバー） | `Content/bgm.dat`（4 曲をかき混ぜて 1 つにまとめたもの） | **OpenTracks（旧 DOVA-SYNDROME）** https://opentracks.com/ （作者の申告） | 可（下の「BGM について」） | ライセンスは確認済み（2026-10-03）。**曲名がわかっていない 2 曲（迷宮・ゲームオーバー）の作曲者ごとの条件だけ未確認** |
 | 効果音 | （プログラムで合成） | このゲームのオリジナル | 可 | 確認済み |
 | フォント DotGothic16 | `Content/fonts/` | Fontworks（Google Fonts） | 可（SIL Open Font License 1.1。ライセンス文を同梱） | 確認済み（`Content/fonts/OFL.txt`） |
-| アイコン | `src/Abbild/Icon.ico` | 主人公の絵から作成 | 主人公の絵と同じ | 主人公の絵の確認に従う |
+| アイコン（剣と盾の紋章） | `src/Abbild/Icon.ico` `Icon.bmp` `src/Abbild.Web/wwwroot/icons/` | このゲームのオリジナル（`tools/make_icon.py` でドット絵としてプログラムで描画） | 可 | 確認済み |
 
 ## BGM について（OpenTracks の音源利用ライセンス）
 
