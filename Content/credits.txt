@@ -1,0 +1,37 @@
+― Abbild ～ 古の迷宮と勇者の魂 ～ ―
+
+【企画・プログラム・ゲームデザイン】
+　髙橋 春喜（Haruki Takahashi）
+
+【モンスターのドット絵】
+　ローズミルクティー「ゲーム用モンスター素材」
+　https://rosemilktea.booth.pm/
+
+【背景・主人公・モンスターのイラスト】
+　画像生成 AI（Google Gemini）を使って制作
+
+【BGM】
+　OpenTracks（旧 DOVA-SYNDROME）
+　https://opentracks.com/
+　「BitCastle」 こおろぎ
+　「生者の行進」 稿屋 隆
+
+【効果音】
+　ゲームの中で合成（オリジナル）
+
+【フォント】
+　DotGothic16
+　Copyright 2020 The DotGothic16 Project Authors
+　SIL Open Font License 1.1
+
+【使用しているソフトウェア】
+　MonoGame（Microsoft Public License）
+　SDL2（zlib License）
+　OpenAL Soft（GNU LGPL）
+　FontStashSharp（zlib License）
+　StbTrueTypeSharp（MIT License）
+　NVorbis（MIT License）
+　.NET（MIT License）
+
+【スペシャルサンクス】
+　遊んでくれたあなた

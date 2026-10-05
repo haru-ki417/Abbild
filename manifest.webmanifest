@@ -1,0 +1,16 @@
+{
+  "name": "Abbild ～ 古の迷宮と勇者の魂 ～",
+  "short_name": "Abbild",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0d18",
+  "theme_color": "#0b0d18",
+  "lang": "ja",
+  "icons": [
+    { "src": "icons/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "icons/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}
